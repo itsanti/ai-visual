@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 
 SRC = Path(__file__).resolve().parents[1] / "src"
-CATEGORY_NAMES = {"games": "Игры", "react": "React"}
+CATEGORY_NAMES = {"ai-dev": "AI Dev", "games": "Игры", "react": "React"}
 PAGE_DETAILS = {
     "games/aion2-checklist.html": (
         "Aion 2 — Журнал даэва",

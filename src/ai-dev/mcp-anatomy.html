@@ -1,0 +1,1275 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Анатомия MCP-сервера</title>
+<meta name="description" content="Сравнение архитектур MCP-серверов, разбор проектирования инструментов и пример реализации.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+:root{
+  --ground:#F1F2EF;
+  --surface:#FAFAF8;
+  --surface-2:#E8EAE5;
+  --ink:#191D1B;
+  --ink-2:#4A524E;
+  --ink-3:#767F7A;
+  --rule:#CFD4CE;
+  --rule-strong:#A9B1AC;
+  --accent:#175E5A;
+  --accent-soft:#DCE9E7;
+  --cat-a:#175E5A;
+  --cat-a-bg:#DCE9E7;
+  --cat-b:#8C5A11;
+  --cat-b-bg:#F2E7D4;
+  --cat-c:#4E5871;
+  --cat-c-bg:#E1E4EC;
+  --cat-x:#93362A;
+  --cat-x-bg:#F3DEDA;
+  --shadow:0 1px 2px rgba(25,29,27,.05);
+
+  --display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --body:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#121512;
+    --surface:#191D1A;
+    --surface-2:#222724;
+    --ink:#E4E7E2;
+    --ink-2:#AFB6B1;
+    --ink-3:#818A85;
+    --rule:#2C322E;
+    --rule-strong:#434B46;
+    --accent:#63B8B0;
+    --accent-soft:#17322F;
+    --cat-a:#63B8B0; --cat-a-bg:#17322F;
+    --cat-b:#D3A052; --cat-b-bg:#33280F;
+    --cat-c:#96A2C0; --cat-c-bg:#1E2330;
+    --cat-x:#DE8878; --cat-x-bg:#331B17;
+    --shadow:0 1px 2px rgba(0,0,0,.35);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#121512;
+  --surface:#191D1A;
+  --surface-2:#222724;
+  --ink:#E4E7E2;
+  --ink-2:#AFB6B1;
+  --ink-3:#818A85;
+  --rule:#2C322E;
+  --rule-strong:#434B46;
+  --accent:#63B8B0;
+  --accent-soft:#17322F;
+  --cat-a:#63B8B0; --cat-a-bg:#17322F;
+  --cat-b:#D3A052; --cat-b-bg:#33280F;
+  --cat-c:#96A2C0; --cat-c-bg:#1E2330;
+  --cat-x:#DE8878; --cat-x-bg:#331B17;
+  --shadow:0 1px 2px rgba(0,0,0,.35);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+img{max-width:100%}
+body{
+  background:var(--ground);
+  color:var(--ink);
+  font-family:var(--body);
+  font-size:17px;
+  line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent);text-underline-offset:.18em;text-decoration-thickness:.06em}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+code,.mono{font-family:var(--mono);font-size:.86em;font-variant-ligatures:none}
+p code,li code,td code{background:var(--surface-2);padding:.08em .3em;border-radius:3px}
+
+.shell{display:grid;grid-template-columns:272px minmax(0,1fr);gap:0;min-height:100vh}
+.rail{
+  border-right:1px solid var(--rule);
+  background:var(--surface);
+  padding:28px 20px 48px 26px;
+  position:sticky;top:0;height:100vh;overflow-y:auto;
+}
+.rail .brand{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:-.01em;line-height:1.25;margin-bottom:2px}
+.rail .brand span{display:block;font-family:var(--mono);font-weight:400;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-top:7px}
+.rail nav{margin-top:26px;display:flex;flex-direction:column;gap:1px}
+.rail nav a{
+  display:grid;grid-template-columns:26px 1fr;gap:8px;align-items:baseline;
+  font-family:var(--display);font-size:12.6px;font-weight:500;line-height:1.35;
+  color:var(--ink-2);text-decoration:none;padding:5px 8px 5px 4px;border-radius:4px;
+}
+.rail nav a i{font-style:normal}
+.rail nav a .n{font-family:var(--mono);font-size:10px;color:var(--ink-3);font-weight:500}
+.rail nav a:hover{background:var(--surface-2);color:var(--ink)}
+.rail nav a.on{background:var(--accent-soft);color:var(--accent)}
+.rail nav a.on .n{color:var(--accent)}
+.rail nav hr{border:0;border-top:1px solid var(--rule);margin:10px 4px}
+.themer{margin-top:26px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);background:none;border:1px solid var(--rule);border-radius:4px;padding:6px 9px;cursor:pointer}
+.themer:hover{border-color:var(--rule-strong);color:var(--ink-2)}
+
+main{padding:0 0 120px}
+.wide{max-width:1180px;padding:0 44px}
+
+.mast{border-bottom:1px solid var(--rule);padding:64px 44px 40px;max-width:1180px}
+.eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-3)}
+.mast h1{
+  font-family:var(--display);font-weight:700;font-size:clamp(34px,5.2vw,54px);
+  line-height:1.02;letter-spacing:-.028em;margin:16px 0 0;text-wrap:balance;max-width:17ch;
+}
+.mast .dek{font-size:19px;color:var(--ink-2);max-width:62ch;margin:20px 0 0}
+.factbar{display:flex;flex-wrap:wrap;gap:0;margin-top:34px;border-top:1px solid var(--rule)}
+.factbar div{padding:14px 26px 4px 0;margin-right:26px;border-right:1px solid var(--rule)}
+.factbar div:last-child{border-right:0}
+.factbar b{display:block;font-family:var(--display);font-size:25px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.factbar span{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+
+section{padding-top:60px;scroll-margin-top:20px}
+h2{
+  font-family:var(--display);font-weight:700;font-size:27px;letter-spacing:-.02em;
+  line-height:1.14;margin:0 0 18px;text-wrap:balance;
+  display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:baseline;
+}
+h2 .n{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--accent);letter-spacing:0}
+h3{font-family:var(--display);font-weight:600;font-size:17.5px;letter-spacing:-.01em;margin:34px 0 10px;color:var(--ink)}
+h4{font-family:var(--mono);font-weight:700;font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin:26px 0 8px}
+p{margin:0 0 14px;max-width:68ch}
+ul,ol{margin:0 0 16px;padding-left:20px;max-width:68ch}
+li{margin-bottom:7px}
+li::marker{color:var(--ink-3)}
+strong{font-weight:600}
+.lead{font-size:18.5px;color:var(--ink-2)}
+hr.sep{border:0;border-top:1px solid var(--rule);margin:56px 0 0;max-width:1180px}
+
+.callout{
+  border-left:3px solid var(--accent);background:var(--surface);
+  padding:16px 20px;margin:20px 0;max-width:68ch;box-shadow:var(--shadow);
+}
+.callout p:last-child{margin-bottom:0}
+.callout .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:6px}
+.callout.warn{border-left-color:var(--cat-x)}
+.callout.warn .lbl{color:var(--cat-x)}
+
+.q{font-family:var(--display);font-weight:600;font-size:19px;line-height:1.35;letter-spacing:-.012em;margin:26px 0 12px;padding-left:16px;border-left:2px solid var(--rule-strong);max-width:60ch;color:var(--ink)}
+
+.chip{
+  display:inline-block;font-family:var(--mono);font-size:9.5px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;border-radius:3px;vertical-align:.14em;
+}
+.a{background:var(--cat-a-bg);color:var(--cat-a)}
+.b{background:var(--cat-b-bg);color:var(--cat-b)}
+.c{background:var(--cat-c-bg);color:var(--cat-c)}
+.x{background:var(--cat-x-bg);color:var(--cat-x)}
+
+.cards{display:grid;gap:14px;margin:20px 0;max-width:1180px}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:16px 18px;box-shadow:var(--shadow)}
+.card h5{font-family:var(--display);font-weight:600;font-size:15.5px;margin:0 0 6px;letter-spacing:-.01em;display:flex;gap:9px;align-items:baseline;flex-wrap:wrap}
+.card p{font-size:15.5px;margin:0 0 8px;color:var(--ink-2);max-width:none}
+.card p:last-child{margin-bottom:0}
+.card .src{font-family:var(--mono);font-size:11px;color:var(--ink-3);display:block;margin-top:8px;line-height:1.5}
+
+.tablewrap{overflow-x:auto;margin:20px 0;max-width:1180px;border:1px solid var(--rule);border-radius:6px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;font-family:var(--display)}
+th,td{padding:9px 11px;text-align:left;border-bottom:1px solid var(--rule);vertical-align:top}
+thead th{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:500;background:var(--surface-2);white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:0}
+td.yes{color:var(--cat-a);font-weight:600;text-align:center}
+td.part{color:var(--cat-b);font-weight:600;text-align:center}
+td.no{color:var(--ink-3);text-align:center}
+td.na{color:var(--ink-3);text-align:center;font-style:italic}
+td.num{font-variant-numeric:tabular-nums;text-align:right}
+td:first-child{font-weight:500;min-width:230px}
+
+pre{
+  font-family:var(--mono);font-size:12.3px;line-height:1.6;background:var(--surface);
+  border:1px solid var(--rule);border-radius:6px;padding:15px 17px;overflow-x:auto;
+  margin:16px 0;max-width:1180px;color:var(--ink-2);
+}
+pre b{color:var(--ink);font-weight:700}
+pre i{color:var(--accent);font-style:normal}
+pre s{color:var(--cat-x);text-decoration:none}
+
+.stack{display:flex;flex-direction:column;gap:0;margin:22px 0;max-width:660px}
+.layer{border:1px solid var(--rule);background:var(--surface);padding:12px 16px}
+.layer+.layer{border-top:0}
+.layer:first-child{border-radius:6px 6px 0 0}
+.layer:last-child{border-radius:0 0 6px 6px}
+.layer .t{font-family:var(--display);font-weight:600;font-size:14.5px;letter-spacing:-.005em}
+.layer .d{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:3px;line-height:1.5}
+.layer.hl{background:var(--accent-soft);border-color:var(--accent)}
+.layer.hl .t{color:var(--accent)}
+.layer.hl .d{color:var(--accent)}
+.arrow{font-family:var(--mono);font-size:11px;color:var(--ink-3);text-align:center;padding:5px 0;letter-spacing:.08em}
+
+.ladder{display:grid;gap:10px;margin:20px 0;max-width:1180px}
+.rung{display:grid;grid-template-columns:92px 1fr;gap:16px;border:1px solid var(--rule);border-radius:6px;background:var(--surface);padding:15px 18px}
+.rung .lv{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);border-right:1px solid var(--rule);padding-right:14px}
+.rung .lv b{display:block;font-family:var(--display);font-size:22px;font-weight:700;color:var(--accent);letter-spacing:-.02em;margin-bottom:3px}
+.rung h5{font-family:var(--display);font-size:15.5px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+.rung p{font-size:15px;color:var(--ink-2);margin:0 0 6px;max-width:none}
+.rung p:last-child{margin:0}
+
+.checklist{list-style:none;padding:0;max-width:1180px;margin:20px 0}
+.checklist li{display:grid;grid-template-columns:20px 1fr;gap:12px;border-bottom:1px solid var(--rule);padding:13px 2px;margin:0}
+.checklist li:last-child{border-bottom:0}
+.checklist .box{font-family:var(--mono);color:var(--ink-3);font-size:14px;line-height:1.5}
+.checklist b{font-family:var(--display);font-size:15.5px;font-weight:600;display:block;margin-bottom:3px;letter-spacing:-.005em}
+.checklist span{font-size:15px;color:var(--ink-2)}
+.checklist em{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--ink-3);display:block;margin-top:5px}
+
+.foot{border-top:1px solid var(--rule);margin-top:70px;padding-top:22px;max-width:1180px;font-size:14.5px;color:var(--ink-3)}
+
+@media (max-width:960px){
+  .shell{grid-template-columns:1fr}
+  .rail{position:static;height:auto;border-right:0;border-bottom:1px solid var(--rule);padding:22px 22px 26px}
+  .rail nav{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:0 10px;margin-top:16px}
+  .mast{padding:40px 22px 30px}
+  .wide{padding:0 22px}
+  body{font-size:16.5px}
+  .rung{grid-template-columns:1fr}
+  .rung .lv{border-right:0;border-bottom:1px solid var(--rule);padding:0 0 8px}
+  .rung .lv b{display:inline-block;margin-right:8px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="shell">
+<aside class="rail">
+  <div class="brand">Анатомия MCP-сервера<span>Полевое руководство · 6 репозиториев</span></div>
+  <nav id="toc">
+    <a href="#s1"><i class="n">01</i><i>Executive summary</i></a>
+    <a href="#s2"><i class="n">02</i><i>Исследованные проекты</i></a>
+    <a href="#s3"><i class="n">03</i><i>Сравнение архитектур</i></a>
+    <a href="#s4"><i class="n">04</i><i>Общие паттерны</i></a>
+    <a href="#s5"><i class="n">05</i><i>Дизайн инструментов</i></a>
+    <a href="#s6"><i class="n">06</i><i>Обработка ошибок</i></a>
+    <a href="#s7"><i class="n">07</i><i>Интеграции</i></a>
+    <a href="#s8"><i class="n">08</i><i>Конфигурация</i></a>
+    <a href="#s9"><i class="n">09</i><i>Наблюдаемость</i></a>
+    <a href="#s10"><i class="n">10</i><i>Безопасность</i></a>
+    <a href="#s11"><i class="n">11</i><i>Тестирование</i></a>
+    <a href="#s12"><i class="n">12</i><i>Состояние и lifecycle</i></a>
+    <a href="#s13"><i class="n">13</i><i>Понятность для LLM</i></a>
+    <a href="#s14"><i class="n">14</i><i>Анти-паттерны</i></a>
+    <hr>
+    <a href="#s15"><i class="n">15</i><i>Универсальные принципы</i></a>
+    <a href="#s16"><i class="n">16</i><i>Условные паттерны</i></a>
+    <a href="#s17"><i class="n">17</i><i>SDK-специфичное</i></a>
+    <a href="#s18"><i class="n">18</i><i>Reference architecture</i></a>
+    <a href="#s19"><i class="n">19</i><i>Skeleton проекта</i></a>
+    <a href="#s20"><i class="n">20</i><i>Reference implementation</i></a>
+    <a href="#s21"><i class="n">21</i><i>Модель зрелости</i></a>
+    <a href="#s22"><i class="n">22</i><i>Baseline-чеклист</i></a>
+    <a href="#s23"><i class="n">23</i><i>Выводы</i></a>
+    <hr>
+    <a href="#method"><i class="n">A</i><i>Метод и ограничения</i></a>
+  </nav>
+  <button class="themer" id="themer" type="button">Сменить тему</button>
+</aside>
+
+<main>
+<header class="mast">
+  <div class="eyebrow">Техническое исследование · сентябрь 2026</div>
+  <h1>Что общего у MCP-серверов, которые сделаны правильно</h1>
+  <p class="dek">Разбор шести серверов по исходному коду — от однофайлового blender-mcp до 98-инструментного mcp-atlassian — и извлечение из них архитектуры, которую можно перенести на другой язык, другой SDK и другую предметную область.</p>
+  <div class="factbar">
+    <div><b>6</b><span>репозиториев</span></div>
+    <div><b>~190</b><span>инструментов суммарно</span></div>
+    <div><b>0</b><span>используют resources</span></div>
+    <div><b>1</b><span>использует prompts</span></div>
+    <div><b>4 из 6</b><span>чинят гигиену stdio</span></div>
+  </div>
+</header>
+
+<div class="wide">
+
+<section id="s1">
+<h2><span class="n">01</span><span>Executive summary</span></h2>
+<p class="lead">Короткий ответ на главный вопрос: повторяются не «слои», а <strong>шесть границ</strong>. Проекты, которые считают хорошими, отличаются от остальных не наличием папки <code>domain/</code>, а тем, что эти границы у них проведены явно.</p>
+
+<ol>
+<li><strong>Граница протокола.</strong> MCP SDK импортируется в 1–9 файлах из сотен. В gemini-notebook-mcp-cli — в 2 файлах из ~280; в mcp-atlassian — только в <code>servers/</code> и двух утилитах. Логика вызывается и без MCP: в gemini один и тот же <code>services/*</code> используют <code>mcp/tools/*</code> и <code>cli/commands/*</code>.</li>
+<li><strong>Граница ошибки.</strong> В MCP два независимых канала отказа — протокольная ошибка JSON-RPC и <code>isError</code> результата инструмента. Проекты, которые их различают, дают модели шанс исправиться; проекты, которые нет, отдают ей строку «Caught Exception».</li>
+<li><strong>Граница данных.</strong> Сырой ответ провайдера никогда не уходит модели. Между ними стоит пара <code>from_api_response</code> → <code>to_simplified_dict</code> (mcp-atlassian) или TypedDict-проекция (gemini).</li>
+<li><strong>Граница конфигурации.</strong> Один типизированный объект из окружения, остальной код получает объект, а не <code>os.getenv</code>. Нарушение этого — самая частая протечка даже у зрелых проектов.</li>
+<li><strong>Граница политики.</strong> Набор инструментов фильтруется (3 проекта из 6), но <strong>только один</strong> проверяет политику и при вызове по имени, а не только при листинге. Это не педантизм: у mcp-atlassian есть CVE ровно об этом (GHSA-3r68).</li>
+<li><strong>Граница канала.</strong> При stdio stdout принадлежит протоколу. Четыре проекта независимо написали код, защищающий его — от подмены <code>sys.stdout</code> до запрета наследования stdio дочерними процессами.</li>
+</ol>
+
+<div class="callout">
+<span class="lbl">Главная поправка к исходной гипотезе</span>
+<p>Гипотетическая схема «MCP → Application → Domain → Infrastructure» подтверждается частично. <strong>Domain как отдельный слой в реальности почти отсутствует</strong>: у пяти из шести серверов доменом является чужой API, и вместо доменной модели нужен анти-коррупционный слой. Зато обнаружился слой, которого в гипотезе не было и который есть у лучших проектов — <strong>resolver зависимостей на запрос</strong> (<code>get_jira_fetcher(ctx)</code>): он превращает контекст запроса в сконфигурированный, проверенный клиент и держит в себе всю аутентификацию и мультиарендность, чтобы их не было в инструментах.</p>
+</div>
+
+<p>Второй по значимости вывод — отрицательный: <strong>MCP на практике сведён к tools</strong>. Ни один из шести серверов не отдаёт resources, ни один не объявляет <code>outputSchema</code>, prompt есть ровно один на все шесть проектов. Проектировать сервер, опираясь на богатство протокола, сегодня преждевременно.</p>
+</section>
+<hr class="sep">
+
+<section id="s2">
+<h2><span class="n">02</span><span>Исследованные проекты</span></h2>
+<p>Выборка намеренно неоднородна: от учебного размера до платформы. Это и позволяет отделить архитектурный принцип от следствия масштаба.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Проект</th><th>Роль</th><th>SDK</th><th class="num">Инстр.</th><th class="num">Файлов src</th><th>Крупнейший файл</th><th class="num">Тест-файлов</th><th>Слои</th></tr></thead>
+<tbody>
+<tr><td>mcp-atlassian</td><td>интеграция с Jira/Confluence, multi-tenant</td><td>FastMCP 2</td><td class="num">98</td><td class="num">117</td><td class="mono">servers/jira.py — 4697</td><td class="num">170</td><td>servers / jira / confluence / models / preprocessing / utils</td></tr>
+<tr><td>gemini-notebook-mcp-cli</td><td>MCP + CLI над одним ядром</td><td>FastMCP 2</td><td class="num">~48</td><td class="num">~280</td><td class="mono">cli/main.py — 1016</td><td class="num">104</td><td>mcp / cli / services / core / utils</td></tr>
+<tr><td>blender-mcp</td><td>управление локальным приложением по сокету</td><td>FastMCP (в mcp)</td><td class="num">~28</td><td class="num">10</td><td class="mono">server.py — 1824</td><td class="num">8</td><td>фактически один файл</td></tr>
+<tr><td>mcp-obsidian</td><td>обёртка над локальным REST API</td><td>low-level Server</td><td class="num">15</td><td class="num">4</td><td class="mono">tools.py — 736</td><td class="num">10</td><td>server / tools / obsidian</td></tr>
+<tr><td>google-analytics-mcp</td><td>вендорский сервер над GA4 API</td><td>low-level + ADK</td><td class="num">9</td><td class="num">12</td><td class="mono">coordinator.py — 188</td><td class="num">1</td><td>coordinator / tools / client / utils</td></tr>
+<tr><td>mcpo</td><td>обратный адаптер: MCP → OpenAPI/REST</td><td>SDK-клиент</td><td class="na">прокси</td><td class="num">7</td><td class="mono">main.py — 997</td><td class="num">2</td><td>main / utils</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><em>Строки считаны по непустым строкам файлов; «инструменты» — по числу регистраций.</em></p>
+
+<h3>Почему архитектура у каждого именно такая</h3>
+<ul>
+<li><strong>mcp-atlassian</strong> обслуживает два продукта, два типа развёртывания (Cloud/DC), пять способов аутентификации и HTTP-режим с разными пользователями в одном процессе. Отсюда resolver на запрос, toolsets и SSRF-защита — это не роскошь, а прямое следствие требований.</li>
+<li><strong>gemini-notebook-mcp-cli</strong> с самого начала имеет два интерфейса (CLI и MCP) к одному ядру. Наличие второго потребителя — единственная причина, по которой сервисный слой там настоящий, а не декоративный.</li>
+<li><strong>blender-mcp</strong> держит одно stateful-соединение с одним локальным процессом. Слои не нужны, и их нет; цена — всё состояние в глобальных переменных модуля.</li>
+<li><strong>google-analytics-mcp</strong> вендорский и намеренно тонкий: инструменты — обычные python-функции, схема выводится из аннотаций, MCP-адаптер механический. Обратная сторона — тестов почти нет.</li>
+<li><strong>mcpo</strong> вообще не MCP-сервер, а его зеркало. Он ценен как доказательство: если из <code>inputSchema</code> механически генерируется REST-эндпоинт, значит инструмент — это схема плюс обработчик, а транспорт заменяем.</li>
+</ul>
+</section>
+<hr class="sep">
+
+<section id="s3">
+<h2><span class="n">03</span><span>Сравнение архитектур</span></h2>
+
+<h3>Метрика изоляции и её ловушка</h3>
+<p>Простейший индикатор — сколько файлов импортируют SDK:</p>
+<pre><b>gemini-notebook-mcp-cli</b>  2 файла из ~280   → <i>настоящая изоляция</i>
+<b>mcp-atlassian</b>            9 файлов из 117   → <i>изоляция в servers/ + 2 утилиты</i>
+<b>google-analytics-mcp</b>     2 файла из 12     → <i>изоляция, домен = чужой SDK</i>
+<b>mcp-obsidian</b>             2 файла из 4      → <s>формально мало, но логика там же</s>
+<b>blender-mcp</b>              1 файл из 10      → <s>мало, потому что сервер — один файл на 1824 строки</s></pre>
+<p>Метрика необходима, но недостаточна: у blender-mcp минимальное число импортов SDK при полном отсутствии слоёв. Правильная формулировка инварианта: <em>SDK импортируется только в адаптере <strong>и</strong> вне адаптера существует код, который можно вызвать.</em></p>
+
+<h3>Полный путь запроса</h3>
+<p>Прослежено на реальных инструментах. Разница между тремя моделями видна сразу.</p>
+
+<pre><b>gemini-notebook-mcp-cli — notebook_list</b>
+tools/notebooks.py       handler: get_client() → service → shape → error_result()   <i>~8 строк</i>
+  ↓
+services/notebooks.py    валидация, оркестрация, TypedDict, ServiceError            <i>бизнес-логика</i>
+  ↓
+core/client.py           RPC, cookies, retry, таймауты                              <i>инфраструктура</i>
+
+<b>mcp-atlassian — jira_get_issue</b>
+servers/jira.py          Annotated[...Field], get_jira_fetcher(ctx), проекция       <i>~70 строк</i>
+  ↓
+servers/dependencies.py  <i>resolver</i>: auth → config на запрос → валидация → кэш     <i>1080 строк</i>
+  ↓
+jira/issues.py           вызов atlassian-python-api
+  ↓
+models/jira/issue.py     from_api_response → to_simplified_dict
+
+<b>mcp-obsidian — obsidian_get_file_contents</b>
+tools.py                 ручная проверка аргументов, <s>Obsidian(...) создаётся заново</s>,
+                         вызов, json.dumps → TextContent                            <i>всё в одном</i>
+  ↓
+obsidian.py              requests без сессии, _safe_call → <s>raise Exception(str)</s></pre>
+
+<h3>Где что находится — сводка</h3>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Ответственность</th><th>gemini</th><th>atlassian</th><th>GA</th><th>obsidian</th><th>blender</th></tr></thead>
+<tbody>
+<tr><td>Валидация смысла</td><td>services</td><td>инструмент + клиент</td><td>tools/utils</td><td>инструмент</td><td>инструмент</td></tr>
+<tr><td>Оркестрация</td><td>services</td><td>инструмент</td><td>инструмент</td><td>инструмент</td><td>инструмент</td></tr>
+<tr><td>Доменные ошибки</td><td>services/errors</td><td>1 класс + декораторы</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>HTTP-вызов</td><td>core/client</td><td>jira/confluence</td><td>tools/client</td><td>obsidian.py</td><td>сокет в server.py</td></tr>
+<tr><td>Маппинг моделей</td><td>services (TypedDict)</td><td>models/ (ApiModel)</td><td>proto_to_dict</td><td>—</td><td>—</td></tr>
+<tr><td>Retry</td><td>core/retry</td><td>utils/http (opt-in)</td><td>SDK</td><td>—</td><td>—</td></tr>
+<tr><td>Auth</td><td>services/auth + _utils</td><td>servers/dependencies</td><td>tools/client</td><td>глобальная переменная</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout">
+<span class="lbl">Ответ на вопрос «можно ли использовать логику без MCP»</span>
+<p>Да, и способ ровно один: <strong>функции прикладного слоя принимают зависимости аргументами и ничего не знают о контексте вызова</strong>. В gemini это буквально <code>list_notebooks(client, max_results)</code>. Доказательство работоспособности — второй потребитель: <code>cli/commands/*</code> импортирует те же <code>services/*</code>. Без второго потребителя граница не проверяется и со временем протекает — что и видно в mcp-atlassian, где часть оркестрации осела в четырёхтысячестрочном <code>servers/jira.py</code>.</p>
+</div>
+</section>
+<hr class="sep">
+
+<section id="s4">
+<h2><span class="n">04</span><span>Общие паттерны: матрица</span></h2>
+<p>Каждый паттерн оценён не по частоте, а по тому, следует ли он из природы MCP, из требований проекта или из особенностей SDK. Колонка «Confidence» — уверенность в том, что паттерн стоит переносить в новый проект.</p>
+<p><span class="chip a">A</span> универсальный · <span class="chip b">B</span> условный · <span class="chip c">C</span> SDK/проектный · <span class="chip x">✕</span> анти-паттерн</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Паттерн</th><th>atl</th><th>gem</th><th>GA</th><th>obs</th><th>bln</th><th>mcpo</th><th>Кат.</th><th>Confidence</th></tr></thead>
+<tbody>
+<tr><td>SDK только в адаптере</td><td class="yes">✓</td><td class="yes">✓✓</td><td class="yes">✓</td><td class="no">·</td><td class="no">·</td><td class="na">n/a</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Тонкий tool handler (&lt;15 строк)</td><td class="part">~</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">·</td><td class="no">·</td><td class="na">n/a</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Отдельный application/service слой</td><td class="part">~</td><td class="yes">✓</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="na">n/a</td><td><span class="chip b">B</span></td><td>средняя</td></tr>
+<tr><td>ACL: from_api_response / to_view</td><td class="yes">✓✓</td><td class="yes">✓</td><td class="part">~</td><td class="no">·</td><td class="no">·</td><td class="na">n/a</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Второй потребитель логики (CLI)</td><td class="no">·</td><td class="yes">✓</td><td class="no">·</td><td class="no">·</td><td class="part">~</td><td class="na">n/a</td><td><span class="chip b">B</span></td><td>средняя</td></tr>
+<tr><td>Типизированный config из env</td><td class="yes">✓</td><td class="part">~</td><td class="no">·</td><td class="no">·</td><td class="part">~</td><td class="no">·</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Единая граница ошибок на регистрации</td><td class="yes">✓</td><td class="no">·</td><td class="yes">✓</td><td class="part">~</td><td class="no">·</td><td class="na">n/a</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Иерархия доменных ошибок с hint</td><td class="part">~</td><td class="yes">✓✓</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="na">n/a</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Разделение dev / LLM-facing сообщений</td><td class="yes">✓</td><td class="yes">✓</td><td class="part">~</td><td class="no">·</td><td class="part">~</td><td class="yes">✓</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Переиспользуемый клиент с пулом</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">·</td><td class="yes">✓</td><td class="yes">✓</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Явные таймауты</td><td class="yes">✓</td><td class="yes">✓</td><td class="part">~</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Retry с backoff</td><td class="part">~</td><td class="yes">✓</td><td class="part">~</td><td class="no">·</td><td class="no">·</td><td class="part">~</td><td><span class="chip b">B</span></td><td>высокая</td></tr>
+<tr><td>Retry учитывает идемпотентность</td><td class="no">·</td><td class="yes">✓</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Rate limit / circuit breaker</td><td class="yes">✓</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td><span class="chip b">B</span></td><td>низкая</td></tr>
+<tr><td>Фильтрация набора инструментов</td><td class="yes">✓✓</td><td class="yes">✓</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="yes">✓</td><td><span class="chip b">B</span></td><td>высокая</td></tr>
+<tr><td>Политика проверяется и при вызове</td><td class="yes">✓</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Санитизация схемы под клиентов</td><td class="yes">✓</td><td class="no">·</td><td class="yes">✓</td><td class="na">n/a</td><td class="na">n/a</td><td class="na">n/a</td><td><span class="chip c">C</span></td><td>средняя</td></tr>
+<tr><td>Терпимый ввод (list/JSON-строка)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="na">n/a</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Пагинация с явным «есть ещё»</td><td class="yes">✓</td><td class="part">~</td><td class="part">~</td><td class="no">·</td><td class="no">·</td><td class="na">n/a</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Гигиена stdio</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">·</td><td class="na">n/a</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Lifespan для разделяемого состояния</td><td class="yes">✓</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="yes">✓</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Маскирование секретов в логах</td><td class="yes">✓</td><td class="yes">✓✓</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>SSRF-защита</td><td class="yes">✓✓</td><td class="no">·</td><td class="na">n/a</td><td class="no">·</td><td class="part">~</td><td class="no">·</td><td><span class="chip b">B</span></td><td>высокая*</td></tr>
+<tr><td>Протокольные тесты через MCP-клиент</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">·</td><td class="part">~</td><td class="no">·</td><td class="part">~</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Пирамида тестов, повторяющая слои</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">·</td><td class="part">~</td><td class="part">~</td><td class="no">·</td><td><span class="chip a">A</span></td><td>высокая</td></tr>
+<tr><td>Health-эндпоинт для HTTP</td><td class="yes">✓</td><td class="yes">✓</td><td class="na">n/a</td><td class="na">n/a</td><td class="na">n/a</td><td class="no">·</td><td><span class="chip b">B</span></td><td>средняя</td></tr>
+<tr><td>Resources</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="na">n/a</td><td><span class="chip c">C</span></td><td>—</td></tr>
+<tr><td>Prompts</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="yes">✓</td><td class="na">n/a</td><td><span class="chip b">B</span></td><td>низкая</td></tr>
+<tr><td>outputSchema / structured output</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="na">n/a</td><td><span class="chip b">B</span></td><td>низкая</td></tr>
+<tr><td>Параметр ради телеметрии в схеме</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="no">·</td><td class="yes">✓</td><td class="na">n/a</td><td><span class="chip x">✕</span></td><td>не переносить</td></tr>
+<tr><td>Ошибка как строка в успешном ответе</td><td class="no">·</td><td class="part">~</td><td class="yes">✓</td><td class="no">·</td><td class="yes">✓</td><td class="na">n/a</td><td><span class="chip x">✕</span></td><td>не переносить</td></tr>
+</tbody>
+</table>
+</div>
+<p><em>* «высокая» для SSRF означает: обязателен, если сервер ходит по URL, зависящему от ввода. Если все URL заданы оператором — не нужен.</em></p>
+
+<h3>Три случая, где совпадение не означает правоту</h3>
+<ul>
+<li><strong>Глобальные синглтоны клиента</strong> есть у blender-mcp и gemini. Совпадение объясняется не удачностью решения, а тем, что оба начинались как однопользовательские stdio-серверы. У mcp-atlassian, которому пришлось обслуживать несколько пользователей, тот же приём был бы уязвимостью — и там его нет.</li>
+<li><strong>Отсутствие structured output</strong> у всех шести — не архитектурный выбор, а следствие зрелости экосистемы: клиенты долго не умели его показывать. Это не повод не объявлять <code>outputSchema</code> в новом проекте.</li>
+<li><strong>Санитизация схемы</strong> независимо изобретена дважды (mcp-atlassian схлопывает nullable <code>anyOf</code> для Vertex AI, google-analytics-mcp приводит <code>additionalProperties</code> к boolean для Claude Desktop). Это настоящая проблема совместимости, но лечение — SDK-специфичное; переносить надо не код, а привычку проверять свою схему на целевых клиентах.</li>
+</ul>
+</section>
+<hr class="sep">
+
+<section id="s5">
+<h2><span class="n">05</span><span>Дизайн инструментов</span></h2>
+
+<p class="q">Что делает MCP-инструмент хорошим с точки зрения LLM-клиента?</p>
+<p>Из разбора ~190 инструментов складывается неожиданно конкретный ответ: хороший инструмент <strong>сокращает число ветвлений, которые модель должна сделать вслепую</strong>. Всё остальное — следствия.</p>
+
+<div class="cards">
+<div class="card">
+<h5><span class="chip a">A</span> Гранулярность задаётся намерением, а не эндпоинтом</h5>
+<p>blender-mcp имеет отдельные <code>get_polyhaven_status</code>, <code>get_sketchfab_status</code>, <code>get_hyper3d_status</code>, <code>get_polypizza_status</code>, <code>get_hunyuan3d_status</code> — пять инструментов, чтобы узнать, что доступно. gemini идёт в противоположную сторону: <code>source_add(source_type=url|text|drive|file)</code>, <code>note(action=create|list|update|delete)</code>, <code>studio_create(artifact_type=...)</code>.</p>
+<p>Правило: объединять, когда операции различаются только одним значением и разделяют почти все параметры; разделять, когда набор обязательных параметров разный. Дискриминатор с <code>enum</code> лучше пяти инструментов; дискриминатор, который делает половину параметров условно-обязательными, — хуже.</p>
+<span class="src">gemini: mcp/server.py instructions · blender: server.py</span>
+</div>
+
+<div class="card">
+<h5><span class="chip a">A</span> Ограничения живут в схеме, а не только в прозе</h5>
+<p><code>Field(description=..., ge=0, le=100, pattern=..., enum=[...])</code>. Схему клиент валидирует до вызова — модель получает отказ мгновенно и дёшево. Проза не валидируется никем. mcp-atlassian задаёт <code>pattern</code> для ключа задачи Jira и <code>ge/le</code> для лимитов; mcp-obsidian — <code>enum</code> и <code>minimum/maximum</code> даже на низкоуровневом SDK, вручную.</p>
+<span class="src">mcp-atlassian: servers/jira.py:579–655 · mcp-obsidian: tools.py:639–716</span>
+</div>
+
+<div class="card">
+<h5><span class="chip a">A</span> Терпимый ввод вместо отказа</h5>
+<p>Модели регулярно присылают список как <code>'["a","b"]'</code> или <code>'a,b'</code>, а объект — как JSON-строку. Два проекта независимо написали нормализацию: <code>coerce_list</code> в gemini (с тестом <code>test_coerce_list.py</code>) и семейство <code>_parse_additional_fields</code> / <code>_parse_attachments</code> / <code>_parse_request_participants</code> в mcp-atlassian. Отказ здесь стоит модели целого лишнего цикла; нормализация — трёх строк.</p>
+<span class="src">gemini: mcp/tools/_utils.py:313–345 · mcp-atlassian: servers/jira.py:161–233</span>
+</div>
+
+<div class="card">
+<h5><span class="chip a">A</span> Ответ обязан признаваться в неполноте</h5>
+<p>Самая дорогая ошибка модели — уверенный вывод по обрезанной выдаче. Ответ должен нести <code>has_more</code>/<code>next_cursor</code> и, если возможно, <code>total</code>. mcp-atlassian отдаёт и смещение (<code>start_at</code>), и токен (<code>page_token</code>), объясняя в описании, какой из них работает на Cloud, а какой на Data Center.</p>
+<span class="src">mcp-atlassian: servers/jira.py:784–820</span>
+</div>
+
+<div class="card">
+<h5><span class="chip a">A</span> Параметры, управляющие бюджетом контекста</h5>
+<p><code>fields</code> с поддержкой <code>*all</code>, <code>include_content=false</code>, <code>comment_limit</code>. Отдельно стоит отметить приём из <code>jira_get_issue</code>: параметр <code>include</code> позволяет «встроить» в ответ секции (комментарии, переходы, наблюдателей), и в описании прямо сказано — <em>«avoiding extra tool calls»</em>. Это осознанная борьба с амплификацией вызовов.</p>
+<span class="src">mcp-atlassian: servers/jira.py:632–643</span>
+</div>
+
+<div class="card">
+<h5><span class="chip a">A</span> Аннотации и явная маркировка опасного</h5>
+<p><code>readOnlyHint</code>, <code>destructiveHint</code>, <code>idempotentHint</code> используются в mcp-atlassian системно на всех 98 инструментах. Это подсказка клиенту, чтобы он спросил подтверждение. Описание <code>obsidian_put_content</code> — образец текста для разрушающей операции: «COMPLETELY OVERWRITES… The previous content is lost» плюс прямые ссылки на два безопасных альтернативных инструмента.</p>
+<span class="src">mcp-obsidian: tools.py:305–314</span>
+</div>
+
+<div class="card">
+<h5><span class="chip b">B</span> Ссылки между инструментами в описаниях</h5>
+<p>«Use the <code>get_custom_dimensions_and_metrics</code> tool to retrieve…», «Use search_items first if you only have a keyword». Для сервера из 5 инструментов избыточно; начиная примерно с 15 — единственный способ передать модели граф переходов, не полагаясь на prompts.</p>
+<span class="src">google-analytics-mcp: tools/reporting/core.py:34–79</span>
+</div>
+
+<div class="card">
+<h5><span class="chip x">✕</span> Параметр в схеме, не влияющий на операцию</h5>
+<p>Каждый инструмент blender-mcp принимает <code>user_prompt: str = ""</code> — он нужен исключительно телеметрии. Модель видит его в схеме каждого из 28 инструментов, тратит на него внимание и токены и вынуждена гадать, что туда писать. Наблюдаемость протекла в публичный контракт.</p>
+<span class="src">blender-mcp: server.py, telemetry_decorator.py:208</span>
+</div>
+
+<div class="card">
+<h5><span class="chip x">✕</span> Подтверждение флагом как «защита»</h5>
+<p><code>confirm: bool</code> в <code>obsidian_delete_file</code> и <code>notebook_delete</code>. Как подсказка модели — полезно. Как контроль — нет: флаг выставляет сама модель. Самый честный комментарий на эту тему нашёлся в blender-mcp: <em>«a model relaying prose is not the user answering»</em>. Настоящее подтверждение — это elicitation у клиента или read-only режим на сервере.</p>
+<span class="src">blender-mcp: consent_prompt.py:180–183</span>
+</div>
+</div>
+
+<p class="q">Какие решения API-дизайна помогают модели надёжно пользоваться инструментом?</p>
+<ol>
+<li><strong>Дефолты, при которых вызов без опциональных параметров осмысленен.</strong> Если <code>search(query)</code> без лимита возвращает 10 000 строк — дефолт неверный.</li>
+<li><strong>Клампинг вместо отказа.</strong> <code>limit=10000</code> → тихо ограничить и сказать об этом в описании. Отказ здесь — потерянный цикл.</li>
+<li><strong>Стабильные имена.</strong> Переименование инструмента ломает конфигурации у всех пользователей. Приём mcp-atlassian: декоратор <code>@deprecated_tool(replacement=...)</code>, который дописывает в описание «DEPRECATED: use X.» и переносит инструмент в отдельный toolset — миграция становится видна модели.</li>
+<li><strong>Частичный успех вместо полного отказа.</strong> <code>jira_get_issue</code> оборачивает каждое обогащение в свой <code>try/except</code> и отдаёт пустой список вместо падения всего вызова; <code>get_batch_file_contents</code> в mcp-obsidian подставляет текст ошибки для одного файла и продолжает остальные.</li>
+</ol>
+</section>
+<hr class="sep">
+
+<section id="s6">
+<h2><span class="n">06</span><span>Обработка ошибок</span></h2>
+
+<h3>Два канала отказа, которые все путают</h3>
+<p>Это самый важный технический факт раздела, и он извлекается из mcpo — единственного проекта, который выступает в роли <em>клиента</em> и потому вынужден различать каналы явно:</p>
+<pre><b>MCP_ERROR_TO_HTTP_STATUS = {</b>
+    PARSE_ERROR: 400, INVALID_REQUEST: 400, METHOD_NOT_FOUND: 404,
+    INVALID_PARAMS: 422, INTERNAL_ERROR: 500,
+<b>}</b>
+<i># канал 1 — McpError: вызов не состоялся</i>
+except McpError as e: status = MCP_ERROR_TO_HTTP_STATUS.get(e.error.code, 500)
+<i># канал 2 — result.isError: вызов состоялся и не удался</i>
+if result.isError: raise HTTPException(500, detail={"message": result.content[0].text})</pre>
+<p>Отсюда правило: <strong>протокольный канал — для «так вызвать нельзя», канал результата — для «вызвали и не вышло»</strong>. Доменный отказ (не найдено, нет прав, лимит) — это всегда второй канал, потому что модель должна его прочитать и отреагировать, а не получить обрыв.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Проект</th><th>Что делает при ошибке инструмента</th><th>Последствие</th></tr></thead>
+<tbody>
+<tr><td>mcp-atlassian</td><td>любое исключение → <code>ToolError(f"Error calling tool '{name}': {detail}")</code>, обёртка навешивается при регистрации</td><td>сообщение доходит до модели; <code>exc_info=True</code> уходит в лог</td></tr>
+<tr><td>gemini</td><td><code>error_result(user_message, hint=...)</code> как обычный успешный результат</td><td>модель видит подсказку; клиент не может отличить успех от отказа</td></tr>
+<tr><td>google-analytics-mcp</td><td><code>{"error": "..."}</code> в TextContent, <code>isError</code> не выставляется</td><td>то же, плюс детали исключения уходят в контекст модели</td></tr>
+<tr><td>mcp-obsidian</td><td><code>raise RuntimeError(f"Caught Exception. Error: {e}")</code></td><td>тип потерян, сообщение бесполезно для восстановления</td></tr>
+<tr><td>blender-mcp</td><td>часть инструментов возвращает строку, начинающуюся с «Error»</td><td>внутри проекта пришлось написать <code>classify_tool_result()</code>, распознающий отказ по префиксу строки</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Эталон иерархии</h3>
+<p><code>ServiceError</code> из gemini — единственный класс в выборке, где разделение сделано на уровне полей, а не соглашения:</p>
+<pre>class <b>ServiceError</b>(Exception):
+    message           <i># разработчику и в лог</i>
+    user_message      <i># то, что увидит модель</i>
+    hint              <i># что сделать, чтобы получилось</i>
+    category          <i># машиночитаемая категория</i>
+    provider_code     <i># код внешней системы</i>
+    <b>retryable</b>         <i># имеет ли смысл повторить</i>
+    suggested_action  <i># следующий шаг</i>
+    debug_code
+
+<b>NotFoundError</b> автоматически подставляет hint:
+    "Run 'nlm notebook list' to see available notebooks."</pre>
+
+<p class="q">Как MCP-сервер должен сообщать об ошибке, чтобы модель могла продолжить работу?</p>
+<p>Минимально достаточный набор — четыре факта:</p>
+<ul>
+<li><strong>Что не получилось</strong> — одной фразой, без трейсбека и без внутренних путей.</li>
+<li><strong>Поможет ли повтор</strong> — <code>retryable: true|false</code>. Без этого модель либо долбит неисправимую ошибку, либо сдаётся на временной.</li>
+<li><strong>Что сделать вместо этого</strong> — <code>hint</code>, называющий конкретный инструмент или конкретное значение.</li>
+<li><strong>Категория</strong> — чтобы у модели (и у кода) была возможность ветвиться, а не разбирать строку.</li>
+</ul>
+<p>Отдельно: <strong>ошибка конфигурации — это не ошибка выполнения</strong>. Она адресована оператору, происходит на старте и должна называть переменную окружения и правильное значение. mcp-atlassian делает это образцово: «Cloud authentication requires JIRA_USERNAME and JIRA_API_TOKEN… Missing: JIRA_API_TOKEN».</p>
+
+<div class="callout warn">
+<span class="lbl">Анти-паттерн, который стоит увидеть</span>
+<p>В mcp-obsidian <code>_safe_call</code> переводит все HTTP-ошибки в <code>Exception(f"Error {code}: {message}")</code>. Тип потерян — и уже в следующем методе появляется восстановление по строке: <code>if "Error 40080" not in str(e): raise</code>. Ветвление логики по тексту сообщения — прямое следствие того, что ошибка не была типизирована на границе.</p>
+</div>
+</section>
+<hr class="sep">
+
+<section id="s7">
+<h2><span class="n">07</span><span>Интеграции с внешними системами</span></h2>
+
+<h3>Клиент</h3>
+<ul>
+<li><strong>Один клиент на процесс, а не на вызов.</strong> mcp-obsidian создаёт <code>Obsidian(api_key, host)</code> внутри каждого <code>run_tool</code> — новое TCP+TLS-рукопожатие на каждый вызов инструмента, без пула соединений. google-analytics-mcp наоборот кэширует учётные данные в глобале под <code>threading.Lock</code> и переиспользует их при создании клиентов.</li>
+<li><strong>Атрибуция трафика.</strong> GA проставляет <code>ClientInfo(user_agent="analytics-mcp/{version}")</code>, mcp-atlassian — собственный user-agent. Дёшево и окупается в первом же разборе инцидента на стороне провайдера.</li>
+<li><strong>Таймаут всегда.</strong> Запрос без таймаута подвешивает MCP-сессию целиком. Значения в выборке: 75 c (Jira), 120 c (gemini query), (3, 6) c connect/read (obsidian), 180 c (blender socket, синхронизирован с таймаутом аддона).</li>
+</ul>
+
+<h3>Ретраи и идемпотентность</h3>
+<p>Лучшее рассуждение на эту тему — комментарий в <code>core/retry.py</code> у gemini:</p>
+<pre>RETRYABLE_CONNECT_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout)
+<i># Deliberately narrower than TimeoutException: a read or write timeout
+# means the request may already have been delivered and processed, so
+# retrying it could duplicate side effects on mutating RPCs.</i></pre>
+<p>Правило, годное для любого языка: <strong>повторять по ошибке соединения можно всегда; повторять по таймауту чтения/записи можно только идемпотентные операции</strong>. Иначе «создать» превращается в «создать дважды», и модель этого не увидит.</p>
+
+<h3>Устойчивость — на сессии, не в инструментах</h3>
+<p>mcp-atlassian собирает в <code>utils/http.py</code> четыре механизма и навешивает их патчем на адаптеры уже смонтированной сессии: retry с уважением <code>Retry-After</code>, ограничение конкурентности семафором, token-bucket rate limiter и circuit breaker (открывается после N подряд 429/503, потом одиночный пробный запрос). Все четыре выключены по умолчанию и включаются переменными окружения.</p>
+<p>Оценка: сама реализация — уровень платформы и в новый проект целиком не переносится. Переносится <strong>место</strong>: устойчивость принадлежит слою клиента и включается конфигурацией, а не появляется в коде инструмента.</p>
+
+<h3>Нормализация ответа</h3>
+<p>Пара <code>from_api_response</code> / <code>to_simplified_dict</code> в <code>models/base.py</code> у mcp-atlassian — это анти-коррупционный слой в чистом виде. Смысл двойной:</p>
+<ul>
+<li>Изменение формата у провайдера ломает один маппинг, а не двадцать инструментов.</li>
+<li>Модель никогда не видит сырой payload вендора — он шумный, нестабильный и дорогой по токенам. Плюс появляется место для полезной проекции: <code>to_display_name_dict()</code> заменяет <code>customfield_10243</code> на «Story Points».</li>
+</ul>
+<p>gemini решает ту же задачу проще — TypedDict-результаты в сервисах. Тяжёлые модели не обязательны; обязателен сам факт перевода.</p>
+</section>
+<hr class="sep">
+
+<section id="s8">
+<h2><span class="n">08</span><span>Конфигурация</span></h2>
+
+<h3>Что найдено</h3>
+<ul>
+<li><strong>mcp-atlassian:</strong> <code>@dataclass JiraConfig</code> + <code>from_env()</code> + отдельный <code>is_auth_configured()</code>. Разделение «загрузить» и «проверить» позволяет деградировать мягко: если Confluence не настроен, его инструменты просто не показываются, а сервер работает.</li>
+<li><strong>gemini:</strong> аргументы CLI с дефолтами из env — чистая цепочка приоритетов «флаг → переменная → дефолт», и весь список переменных выведен в <code>--help</code>.</li>
+<li><strong>mcpo:</strong> конфигурация живёт в <code>app.state</code> и читается через <code>getattr(app.state, "x", default)</code> в десятке мест, плюс <code>run(**kwargs)</code>. Нетипизированный мешок — прямая противоположность хорошей практике.</li>
+<li><strong>mcp-obsidian:</strong> <code>os.getenv</code> в значениях по умолчанию в сигнатуре функции и <code>raise ValueError</code> на уровне модуля в двух файлах сразу. Значения замораживаются в момент импорта, тест невозможно изолировать, импорт модуля имеет побочный эффект.</li>
+</ul>
+
+<p class="q">Как не пустить provider-specific конфигурацию в инструменты?</p>
+<p>Приём, который реально работает, виден в mcp-atlassian и формулируется так: <strong>неизменяемый базовый конфиг + производная копия на запрос</strong>. Глобальный <code>JiraConfig</code> загружается один раз в lifespan; для конкретного запроса делается <code>dataclasses.replace(base_config, **user_credentials)</code>. Инструмент получает готовый клиент и не знает ни про env, ни про заголовки, ни про то, Cloud это или Data Center.</p>
+
+<p>Практический вывод для нового проекта:</p>
+<ol>
+<li>Один <code>Settings</code> на всё приложение, один <code>from_env()</code>, один <code>validate()</code>. Всё, что читает окружение вне этого файла, — протечка.</li>
+<li>Падать на старте, а не на первом вызове инструмента. Сообщение должно называть переменную и корректное значение.</li>
+<li>Конфиг неизменяем; вариации — копией.</li>
+<li>Секреты не логируются и не попадают в <code>repr</code> (в Python — <code>field(repr=False)</code>).</li>
+<li>Разделять «параметры провайдера» (URL, токен, таймаут) и «политику сервера» (read-only, набор инструментов). Смешение этих двух уровней — то, из-за чего в mcp-atlassian появился 930-строчный <code>main.py</code>.</li>
+</ol>
+</section>
+<hr class="sep">
+
+<section id="s9">
+<h2><span class="n">09</span><span>Наблюдаемость</span></h2>
+
+<div class="callout warn">
+<span class="lbl">Честный результат</span>
+<p>Ни в одном из шести проектов нет OpenTelemetry, Prometheus, structlog, correlation ID или трассировки. Поиск по <code>opentelemetry|prometheus|structlog|correlation_id|trace_id</code> по исходникам всех шести репозиториев даёт совпадения только в lock-файлах и в собственной телеметрии blender-mcp. Наблюдаемость — самая незрелая область экосистемы. «Все так делают» здесь нельзя использовать как аргумент ни за, ни против.</p>
+</div>
+
+<h3>Что есть</h3>
+<ul>
+<li><strong>Логи в stderr.</strong> Обязательно при stdio. mcp-atlassian задаёт это явно (<code>setup_logging(stream=sys.stderr)</code>), google-analytics-mcp пишет диагностику через <code>print(..., file=sys.stderr)</code>.</li>
+<li><strong>Маскирование секретов.</strong> Два подхода. mcp-atlassian: точный список чувствительных заголовков, с сохранением типа схемы (<code>Bearer ****ab12</code>). gemini: список <em>подстрок</em> с обоснованием в комментарии — «An exact denylist is fail-open: any key added to a tool signature or a service return value later would log in clear by default». Второй подход правильнее.</li>
+<li><strong>Тайминг вызова.</strong> Только blender-mcp измеряет длительность каждого инструмента — но в собственную продуктовую телеметрию, не в логи.</li>
+<li><strong>Ленивое логирование.</strong> gemini оборачивает дорогие вызовы в <code>if mcp_logger.isEnabledFor(logging.DEBUG)</code> и обрезает ответ до 1000 символов.</li>
+</ul>
+
+<h3>Минимальный production-набор</h3>
+<p>Выведен не из практики выборки (её недостаточно), а из того, какие инциденты в этих проектах оставили следы в коде и комментариях:</p>
+<ol>
+<li>Одна строка на вызов инструмента: <code>имя · исход · длительность</code>. Этого хватает, чтобы увидеть медленный инструмент и инструмент, который всегда падает.</li>
+<li>Исключения — с трассировкой в лог и <strong>без</strong> неё в ответе модели.</li>
+<li>Редакция секретов по подстрокам имени ключа, применяемая рекурсивно и к аргументам, и к ответам.</li>
+<li>Стартовая строка с эффективной конфигурацией (без секретов): URL, режим, число зарегистрированных инструментов. Это первое, что спрашивают при разборе «у меня не видно инструментов».</li>
+<li>Уровень логов — переменной окружения.</li>
+<li>Для HTTP-транспорта: <code>/health</code> (есть у mcp-atlassian и gemini) и идентификатор сессии в логах.</li>
+</ol>
+<p>Трассировка, метрики и correlation ID оправданы начиная с уровня «платформа» (см. §21) — при нескольких провайдерах, арендаторах и HTTP-развёртывании.</p>
+</section>
+<hr class="sep">
+
+<section id="s10">
+<h2><span class="n">10</span><span>Безопасность</span></h2>
+
+<h3>Специфическая для MCP модель угроз</h3>
+<p>Лучшая формулировка нашлась в docstring <code>safe_mode.py</code> у blender-mcp:</p>
+<div class="callout warn">
+<span class="lbl">Prompt injection через результат инструмента</span>
+<p>Сторонний текст — имена и описания ассетов из Poly Haven, Sketchfab, Hyper3D — попадает в контекст модели через <em>результаты инструментов</em>. Внедрённые в него инструкции могут заставить модель написать враждебный код, который пользователь одобрит не читая. То есть <strong>вывод одного инструмента является вводом для решения о вызове следующего</strong>. Это отличает MCP-сервер от обычного API: у обычного API нет автономного клиента, которого можно переубедить.</p>
+</div>
+
+<h3>Архитектурные контрмеры, найденные в коде</h3>
+<div class="cards">
+<div class="card">
+<h5><span class="chip a">A</span> Политика применяется и при листинге, и при вызове</h5>
+<p>mcp-atlassian проверяет <code>_is_tool_authorized</code> в обоих местах, и в комментарии зафиксировано почему: «a tool excluded here must not be invocable by name». Более того, отказ и «неизвестный инструмент» возвращают побайтово одинаковое сообщение — чтобы нельзя было выяснить, что инструмент существует, но запрещён. Это регрессия на реальную уязвимость GHSA-3r68.</p>
+<span class="src">mcp-atlassian: servers/main.py:291–404</span>
+</div>
+<div class="card">
+<h5><span class="chip a">A</span> Отказ от глобальных учётных данных при анонимном запросе</h5>
+<p>Если HTTP-запрос дошёл без пользовательской идентичности, сервер <em>отказывается</em> обслуживать его учётными данными оператора — иначе любой анонимный вызов действовал бы от имени администратора. Обход требует явного <code>ALLOW_GLOBAL_CRED_FALLBACK=true</code>. Классическая защита от confused deputy.</p>
+<span class="src">mcp-atlassian: servers/dependencies.py:986–1000</span>
+</div>
+<div class="card">
+<h5><span class="chip a">A</span> Минимальные права на уровне токена</h5>
+<p>google-analytics-mcp зашивает read-only scope константой: <code>analytics.readonly</code>. Девять инструментов, ни одного пишущего, и токен физически не может писать. Самая дешёвая мера из всех перечисленных.</p>
+<span class="src">google-analytics-mcp: tools/client.py:50</span>
+</div>
+<div class="card">
+<h5><span class="chip b">B</span> SSRF: проверка + пиннинг DNS</h5>
+<p>Если URL зависит от ввода — полноценная проверка: схема, запрет обратного слэша в authority (разбор расходится с реальным подключением), блок-лист хостов включая <code>metadata.google.internal</code>, IP-литералы с учётом IPv4-mapped IPv6, резолвинг всех адресов. Плюс transport adapter, который резолвит имя ровно один раз и подключается к проверенному адресу — закрытие TOCTOU при DNS-rebinding (GHSA-49xv/72fm/489g).</p>
+<span class="src">mcp-atlassian: utils/urls.py, utils/ssrf_adapter.py</span>
+</div>
+<div class="card">
+<h5><span class="chip b">B</span> Deny-by-default при выполнении кода</h5>
+<p>Если инструмент исполняет код или команды, единственная работающая схема — allowlist AST с отказом по умолчанию, ограничением размера/глубины и отказом от всего, что нельзя разрешить статически. И честная фиксация границ: «It is a guard on what the model can be talked into, not a sandbox».</p>
+<span class="src">blender-mcp: safe_mode.py</span>
+</div>
+<div class="card">
+<h5><span class="chip a">A</span> Безопасный дефолт транспорта</h5>
+<p>gemini отказывается стартовать HTTP на не-loopback адресе без явного <code>NOTEBOOKLM_ALLOW_EXTERNAL_BIND=1</code>, потому что у сервера нет встроенной аутентификации. Правильный дефолт: локально — открыто, наружу — только осознанно.</p>
+<span class="src">gemini: mcp/server.py:249–267</span>
+</div>
+</div>
+
+<h3>Найденные слабости</h3>
+<ul>
+<li><strong>mcp-obsidian:</strong> <code>verify_ssl: bool = False</code> по умолчанию — TLS не проверяется. Плюс <code>filepath</code> подставляется в URL без нормализации, что открывает обход каталога на стороне локального API.</li>
+<li><strong>mcpo:</strong> при запуске stdio-серверов передаёт им <code>{**os.environ, **env}</code> — всё окружение родителя, включая чужие секреты. Контейнер собирается одной стадией и работает от root, хотя процесс порождает произвольные подпроцессы.</li>
+<li><strong>Общее:</strong> пересылка заголовков в mcpo при включённом режиме и пустом whitelist пересылает всё.</li>
+</ul>
+</section>
+<hr class="sep">
+
+<section id="s11">
+<h2><span class="n">11</span><span>Тестирование</span></h2>
+
+<p class="q">Как тестировать MCP-сервер, чтобы проверять бизнес-логику, а не только handler'ы?</p>
+<p>Ответ прямо следует из архитектуры: <strong>если логику нельзя протестировать, не подняв сервер, — значит, она живёт в handler'е</strong>. Пирамида тестов в зрелых проектах буквально повторяет структуру слоёв.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Проект</th><th>Структура тестов</th><th>Оценка</th></tr></thead>
+<tbody>
+<tr><td>mcp-atlassian</td><td><code>unit/{auth,jira,confluence,models,servers,utils}</code>, <code>integration/</code>, <code>e2e/{cloud,dc}</code>, <code>fixtures/*_mocks.py</code> — 170 файлов</td><td>эталон: есть <code>test_mcp_protocol.py</code>, <code>test_schema_compatibility.py</code>, <code>test_tool_policy_contract.py</code></td></tr>
+<tr><td>gemini</td><td><code>tests/{core,services,cli}</code> + MCP-тесты в корне — 104 файла</td><td>повторяет слои; есть <code>test_json_parity.py</code> и <code>test_verbs_parity.py</code> — проверка эквивалентности CLI и MCP</td></tr>
+<tr><td>mcp-obsidian</td><td>10 файлов, диспетчер тестируется напрямую</td><td>дёшево и по делу; есть контрактный тест на состав инструментов</td></tr>
+<tr><td>blender-mcp</td><td>8 файлов, все — регрессии на конкретные баги и на safe_mode</td><td>тесты есть там, где болело; архитектура не тестируется</td></tr>
+<tr><td>google-analytics-mcp</td><td>1 файл, покрыт один утилитный парсер</td><td>официальный вендорский проект с почти нулевым покрытием</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Рекомендуемая пирамида</h3>
+<div class="stack">
+<div class="layer"><div class="t">Протокольные · единицы</div><div class="d">In-process MCP-клиент. Состав и имена инструментов, схема, аннотации, политика при вызове, форма ответа при ошибке</div></div>
+<div class="arrow">▲</div>
+<div class="layer"><div class="t">Интеграционные · десятки</div><div class="d">Граница с внешней системой: разбор ответа, маппинг статус-кодов в доменные ошибки, ретраи, пагинация. Подменяется транспорт, а не свой же метод</div></div>
+<div class="arrow">▲</div>
+<div class="layer hl"><div class="t">Юнит-тесты логики · большинство</div><div class="d">Use-case'ы с фейковым репозиторием. Без сети, без MCP, без моков HTTP-библиотеки</div></div>
+</div>
+
+<p>Ключевой приём протокольного уровня — <strong>настоящий клиент в том же процессе</strong>, без подпроцесса и сети:</p>
+<pre>async with <b>Client</b>(main_module.main_mcp) as client:
+    tools = await client.list_tools()
+assert "jira_create_issue" not in {t.name for t in tools}
+<i># и сразу же — что его нельзя вызвать по имени</i></pre>
+<p>Именно этот уровень ловит регрессии, которые ломают пользователей: переименованный инструмент, исчезнувшее обязательное поле, потерянную аннотацию, инструмент, вернувшийся в листинг в read-only режиме. В mcp-atlassian такие тесты помечены <code>@pytest.mark.security_regression</code>.</p>
+
+<h4>Чего в пирамиде быть не должно</h4>
+<ul>
+<li>Тестов бизнес-логики, которые ходят через MCP. Они медленные, хрупкие и маскируют плохую границу.</li>
+<li>Моков вида «замокали свой же клиент и проверили, что вызвали свой же клиент». Подменять надо транспорт.</li>
+<li>E2E против живого API в основном прогоне. У mcp-atlassian они вынесены в <code>tests/e2e/</code> и требуют учётных данных.</li>
+</ul>
+</section>
+<hr class="sep">
+
+<section id="s12">
+<h2><span class="n">12</span><span>Состояние и жизненный цикл</span></h2>
+
+<p class="q">Когда MCP-серверу действительно нужно состояние?</p>
+<p>Разбор даёт три честные причины и одну ложную.</p>
+<ul>
+<li><strong>Дорогой в создании ресурс</strong> — соединение, пул, учётные данные. blender-mcp держит постоянный сокет; google-analytics-mcp кэширует результат <code>google.auth.default()</code>, потому что он порождает подпроцесс <code>gcloud</code>.</li>
+<li><strong>Внешняя система сама stateful</strong> — соединение с локальным приложением, длительная задача с опросом статуса (<code>research_start</code> → <code>research_status</code> → <code>research_import</code>).</li>
+<li><strong>Кэш, устраняющий обязательный сетевой вызов на каждый запрос</strong> — у mcp-atlassian валидация учётных данных кэшируется по SHA-256 от «секрет + цель» (сырой токен не хранится) с TTL и дедупликацией одновременных проверок.</li>
+<li><strong>Ложная причина:</strong> «удобно хранить настройки в глобале». Это не состояние, это конфигурация — ей место в неизменяемом объекте.</li>
+</ul>
+
+<p class="q">Где состояние должно жить?</p>
+<ol>
+<li><strong>В lifespan-контексте сервера</strong> — всё, что живёт весь процесс. Так делает mcp-atlassian (<code>MainAppContext</code> как frozen dataclass) и mcpo (<code>AsyncExitStack</code> по всем под-приложениям).</li>
+<li><strong>В области запроса</strong> — всё, что зависит от пользователя. У mcp-atlassian клиент кэшируется на <code>request.state</code>, а не в глобале, — иначе HTTP-режим с несколькими пользователями был бы небезопасен.</li>
+<li><strong>В области сессии</strong> — то, что должно случиться один раз на разговор. blender-mcp помечает «уже спрашивали про телеметрию» ключом <code>id(ctx.request_context.session)</code>.</li>
+<li><strong>Никогда — в переменных модуля.</strong> Контрпример: <code>_blender_connection</code>, <code>_addon_handshake</code>, <code>_addon_handshake_checked</code> на уровне модуля в blender-mcp. Следствия: нельзя подменить в тесте, нельзя иметь два экземпляра, нельзя надёжно закрыть. В lifespan там возвращается пустой словарь с комментарием «we're using the global connection» — SDK предоставил правильное место, и им не воспользовались.</li>
+</ol>
+
+<h3>Жизненный цикл</h3>
+<ul>
+<li><strong>Мягкая деградация на старте.</strong> mcp-atlassian ловит ошибку загрузки конфигурации каждого сервиса отдельно и, если Confluence не настроен, просто не показывает его инструменты. mcpo поднимает все под-серверы, логирует сводку «подключились / не подключились» и продолжает с теми, что поднялись.</li>
+<li><strong>Корректное завершение.</strong> Обработчики SIGTERM/SIGINT через событие, а не через сложную логику в самом обработчике; сброс потоков перед выходом (важно в контейнере); <strong>обязательно SIGPIPE</strong> — иначе отключение stdio-клиента убивает процесс записью в закрытый pipe.</li>
+<li><strong>Согласование версий.</strong> blender-mcp делает handshake с аддоном и сравнивает <code>EXPECTED_ADDON_PROTOCOL_VERSION</code>. Актуально для любого сервера, у которого есть отдельно обновляемая половина.</li>
+</ul>
+</section>
+<hr class="sep">
+
+<section id="s13">
+<h2><span class="n">13</span><span>Понятность для LLM</span></h2>
+
+<p>Этот раздел отделяет <strong>качество кода</strong> от <strong>usability для модели</strong>. Это разные оси: mcp-obsidian написан посредственно, но его описания инструментов — одни из лучших в выборке; google-analytics-mcp имеет чистый код и почти нулевое покрытие тестами, зато выдающийся механизм описаний.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Свойство</th><th>Качество кода</th><th>LLM-usability</th></tr></thead>
+<tbody>
+<tr><td>Тонкий handler</td><td>да</td><td>нет — модель его не видит</td></tr>
+<tr><td>Разделение слоёв</td><td>да</td><td>нет</td></tr>
+<tr><td>Enum и границы в схеме</td><td>немного</td><td>да — валидируется до вызова</td></tr>
+<tr><td>Примеры в описании</td><td>нет</td><td>да, сильно</td></tr>
+<tr><td>Стабильные имена</td><td>нет</td><td>да — ломает конфигурации</td></tr>
+<tr><td>Сообщение об ошибке с hint</td><td>немного</td><td>да, сильно</td></tr>
+<tr><td>Маленькая поверхность инструментов</td><td>нет</td><td>да — контекст конечен</td></tr>
+<tr><td>Типизированный конфиг</td><td>да</td><td>нет</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Приём, который стоит украсть целиком</h3>
+<p>google-analytics-mcp генерирует примеры для описания <strong>программно, из тех же типов, которыми пользуется API</strong>:</p>
+<pre>range_jan = data_v1beta.DateRange(start_date="2025-01-01",
+                                  end_date="2025-01-31", name="Jan2025")
+return f"""Example date_range arguments:
+  1. A single date range:
+     [ {<i>proto_to_json(range_jan)</i>} ]
+  ..."""</pre>
+<p>Примеры физически не могут разойтись со схемой: если поле переименуют, код перестанет собираться. Описание <code>run_report</code> склеивается из docstring функции и четырёх генераторов подсказок — по фильтрам, диапазонам дат, сортировкам. Туда же вынесено объяснение ограничения API («нельзя скомбинировать dimension_filter и metric_filter так-то») с двумя рабочими обходными путями и советом, какой предпочесть с точки зрения квоты.</p>
+
+<h3>Инструкции уровня сервера</h3>
+<p>Поле <code>instructions</code> при создании сервера — недооценённое место. gemini использует его как карту: как восстановить аутентификацию, что делать при переключении аккаунта, какие инструменты консолидированы и по какому параметру, что после создания артефакта нужно опрашивать статус. Это то, что не помещается в описание отдельного инструмента и при этом нужно до первого вызова.</p>
+
+<h3>Бюджет контекста как проектное ограничение</h3>
+<p>Три проекта независимо добавили механизм скрытия инструментов, и в комментарии gemini причина названа прямо: <em>«Clients that only need a subset can hide the rest to save context»</em>. 98 инструментов mcp-atlassian или 43 инструмента gemini — это описания, которые лежат в контексте модели постоянно, до всякой работы.</p>
+<p>Практическое следствие: <strong>поверхность инструментов — это бюджет, а не витрина</strong>. Дефолтный набор должен покрывать основной сценарий; остальное включается конфигурацией.</p>
+</section>
+<hr class="sep">
+
+<section id="s14">
+<h2><span class="n">14</span><span>Анти-паттерны</span></h2>
+<p class="q">Что выглядит нормально в маленьком сервере, но плохо масштабируется?</p>
+
+<div class="cards">
+<div class="card">
+<h5><span class="chip x">✕</span> Логика в tool handler</h5>
+<p>При трёх инструментах незаметно. При тридцати — валидация продублирована тридцать раз и слегка разошлась. <code>servers/jira.py</code> в mcp-atlassian вырос до 4697 строк при формально тонких handler'ах: тонкими остались вызовы, а вся подготовка параметров и склейка обогащений осела рядом.</p>
+</div>
+<div class="card">
+<h5><span class="chip x">✕</span> Копипаста границы ошибок</h5>
+<p>В gemini каждый из ~43 инструментов содержит один и тот же блок <code>try / except ServiceError / except Exception</code>. Любое изменение контракта ошибки — правка в 43 местах. mcp-atlassian решает ту же задачу один раз, переопределив регистрацию инструмента.</p>
+</div>
+<div class="card">
+<h5><span class="chip x">✕</span> Клиент создаётся внутри вызова</h5>
+<p><code>api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)</code> — эта строка повторяется в каждом из 15 handler'ов mcp-obsidian. Нет пула соединений, нет единой точки для таймаутов и ретраев, конфигурация читается из глобалов модуля.</p>
+</div>
+<div class="card">
+<h5><span class="chip x">✕</span> Ошибка как строка результата</h5>
+<p>blender-mcp пришлось написать <code>classify_tool_result()</code>, который определяет неудачу по префиксам <code>"error"</code> и <code>"failed to "</code> в возвращённой строке. Это неизбежная расплата: если отказ не имеет типа, его придётся угадывать.</p>
+</div>
+<div class="card">
+<h5><span class="chip x">✕</span> Наблюдаемость в публичном контракте</h5>
+<p><code>user_prompt: str = ""</code> в схеме всех 28 инструментов blender-mcp. Телеметрии нужен контекст — она получила его, заняв место в интерфейсе, который читает модель.</p>
+</div>
+<div class="card">
+<h5><span class="chip x">✕</span> Состояние в переменных модуля</h5>
+<p><code>_blender_connection</code>, <code>_addon_handshake</code>, <code>_client</code> в gemini. Работает ровно до первого из трёх событий: появления второго пользователя, появления второго экземпляра в процессе, попытки написать изолированный тест.</p>
+</div>
+<div class="card">
+<h5><span class="chip x">✕</span> Побочные эффекты при импорте</h5>
+<p>mcp-obsidian: <code>raise ValueError("OBSIDIAN_API_KEY required")</code> на уровне модуля, причём в двух файлах, каждый со своей копией чтения env. Импортировать модуль для теста нельзя без настроенного окружения.</p>
+</div>
+<div class="card">
+<h5><span class="chip x">✕</span> Нетипизированный мешок конфигурации</h5>
+<p>mcpo: <code>run(**kwargs)</code> плюс <code>getattr(app.state, "connection_timeout", None)</code> в разных модулях. Опечатка в имени ключа не ломает ничего — просто тихо включается дефолт.</p>
+</div>
+<div class="card">
+<h5><span class="chip x">✕</span> Зависимость от внутренностей SDK</h5>
+<p><code>self._local_provider._components.values()</code>, <code>f.jira._session</code>, <code>self.jira._session.headers.pop(...)</code> в mcp-atlassian. Работает, пока SDK не обновится. Иногда это единственный способ — но тогда нужен тест, который сломается первым.</p>
+</div>
+<div class="card">
+<h5><span class="chip x">✕</span> Плоская поверхность вместо консолидации</h5>
+<p>Пять отдельных <code>get_*_status</code> в blender-mcp и prompt на 120 строк, который объясняет модели, в каком порядке их вызывать. Prompt здесь компенсирует то, что поверхность инструментов сама себя не объясняет — и компенсирует ненадёжно, потому что prompts поддерживают не все клиенты.</p>
+</div>
+<div class="card">
+<h5><span class="chip x">✕</span> Разрешение проверяется только при листинге</h5>
+<p>Скрытие инструмента из <code>list_tools</code> без проверки при <code>call_tool</code> — это не запрет, а маскировка. В mcp-atlassian это исправлено после уязвимости; во всех остальных проектах с фильтрацией проверка при вызове отсутствует.</p>
+</div>
+<div class="card">
+<h5><span class="chip x">✕</span> Абстракция, у которой один потребитель</h5>
+<p>Обратный случай: <code>_ServiceSpec</code> в mcp-atlassian — dataclass из 13 полей с лямбдами, параметризующий 250-строчный резолвер для ровно двух сервисов. Оправдано ли — спорно; для двух реализаций дублирование могло оказаться дешевле связности.</p>
+</div>
+</div>
+</section>
+<hr class="sep">
+
+<section id="s15">
+<h2><span class="n">15</span><span>Универсальные принципы</span></h2>
+<p><span class="chip a">A</span> Применимы практически к любому MCP-серверу, независимо от языка, SDK и домена.</p>
+<ol>
+<li><strong>MCP — это адаптер, а не приложение.</strong> SDK импортируется только в адаптере; вне адаптера должен существовать вызываемый код.</li>
+<li><strong>Handler не содержит логики.</strong> Нормализовать ввод → вызвать → спроецировать результат. Ничего больше.</li>
+<li><strong>Валидация смысла живёт под адаптером.</strong> Схема ловит типы; правила домена ловит прикладной слой — иначе второй потребитель останется без проверок.</li>
+<li><strong>Сырой ответ провайдера не уходит модели.</strong> Между ними — перевод в свою модель и проекция.</li>
+<li><strong>Ошибка — это типизированный объект с полями для двух аудиторий.</strong> Разработчику — детали в лог, модели — что не вышло, поможет ли повтор, что делать дальше.</li>
+<li><strong>Граница ошибок — одна, и она на регистрации инструмента.</strong> Не в каждом handler'е.</li>
+<li><strong>Различать протокольный отказ и отказ выполнения.</strong> Доменная ошибка — всегда второй канал.</li>
+<li><strong>Один клиент на процесс, с таймаутом.</strong> Создание клиента внутри вызова — дефект.</li>
+<li><strong>Ретрай знает про идемпотентность.</strong> Соединение — повторяем всегда; таймаут чтения — только для чтения.</li>
+<li><strong>Одна точка чтения окружения, падение на старте, сообщение-инструкция.</strong></li>
+<li><strong>Ответ обязан признаваться в неполноте.</strong> <code>has_more</code> / <code>next_cursor</code>.</li>
+<li><strong>Сервер ограничивает объём выдачи сам,</strong> независимо от запрошенного лимита.</li>
+<li><strong>Терпимый ввод.</strong> JSON-строка вместо массива — нормализовать, а не отвергать.</li>
+<li><strong>Политика проверяется в обеих точках</strong> — при листинге и при вызове.</li>
+<li><strong>Разделяемое состояние — в lifespan; пользовательское — в области запроса; в модулях — ничего.</strong></li>
+<li><strong>Гигиена stdio.</strong> stdout только для протокола, логи в stderr, UTF-8, SIGPIPE, никакого наследования stdio подпроцессами.</li>
+<li><strong>Секреты маскируются по подстроке имени ключа</strong> — fail-closed, а не fail-open.</li>
+<li><strong>Логика тестируется без MCP; контракт тестируется через MCP.</strong></li>
+<li><strong>Имена инструментов — публичный API.</strong> Менять только через явное устаревание.</li>
+<li><strong>Поверхность инструментов — бюджет контекста,</strong> а не список возможностей.</li>
+</ol>
+</section>
+<hr class="sep">
+
+<section id="s16">
+<h2><span class="n">16</span><span>Условные паттерны</span></h2>
+<p><span class="chip b">B</span> Полезны, но зависят от типа сервера. Для каждого — условие включения.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Паттерн</th><th>Нужен, когда</th><th>Вреден, когда</th></tr></thead>
+<tbody>
+<tr><td>Отдельный application/service слой</td><td>есть второй потребитель (CLI, HTTP-API) или &gt;15 инструментов</td><td>5 инструментов и один потребитель — лишний уровень косвенности</td></tr>
+<tr><td>Порты и инверсия зависимостей</td><td>нужно тестировать логику без сети; есть или планируется второй провайдер</td><td>один провайдер и тесты через подмену транспорта — порт ничего не добавляет</td></tr>
+<tr><td>Toolsets / группы инструментов</td><td>&gt;20 инструментов или разные роли пользователей</td><td>маленький сервер: конфигурация сложнее самого сервера</td></tr>
+<tr><td>Multi-tenant (креды на запрос)</td><td>HTTP-транспорт с несколькими пользователями</td><td>stdio с одним пользователем — оператор и есть пользователь</td></tr>
+<tr><td>SSRF-защита</td><td>любой URL зависит от ввода модели или заголовков</td><td>все URL заданы конфигурацией оператора</td></tr>
+<tr><td>Circuit breaker / rate limiter</td><td>жёсткие квоты провайдера, много параллельных сессий</td><td>локальный сервис — сложность без выгоды</td></tr>
+<tr><td>Кэш валидации учётных данных</td><td>проверка кред — сетевой вызов на каждый запрос</td><td>stdio с одними кредами на весь процесс</td></tr>
+<tr><td>Prompts</td><td>есть жёсткий многошаговый порядок, который не выводится из описаний</td><td>обычно: поддержка у клиентов неравномерна, описания надёжнее</td></tr>
+<tr><td>Resources</td><td>есть стабильный адресуемый read-only контент, который клиент захочет приложить сам</td><td>почти всегда: ноль из шести проектов нашли применение</td></tr>
+<tr><td>Elicitation</td><td>нужно согласие человека, а не модели</td><td>клиент может не поддерживать — обязательна проверка capability и запасной путь</td></tr>
+<tr><td>Retry</td><td>внешняя сеть</td><td>локальный сокет: быстрее вернуть ошибку</td></tr>
+<tr><td>HTTP-транспорт и health-check</td><td>развёртывание в кластере, удалённый доступ</td><td>desktop-интеграция: stdio проще и безопаснее</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+<hr class="sep">
+
+<section id="s17">
+<h2><span class="n">17</span><span>SDK-специфичное</span></h2>
+<p><span class="chip c">C</span> Не переносить автоматически: это следствие конкретного SDK или конкретного проекта.</p>
+<ul>
+<li><strong>Реестр классов-обработчиков</strong> (<code>ToolHandler</code>, <code>add_tool_handler</code>, ручной <code>list_tools</code>/<code>call_tool</code>) в mcp-obsidian — прямое следствие низкоуровневого Server API. На FastMCP-подобном SDK это лишний слой. Но <em>идея</em> — разделить объявление инструмента и его регистрацию — переносится: gemini делает то же самое декоратором, собирающим функции в реестр, чтобы модули инструментов не импортировали сервер.</li>
+<li><strong>Ручная валидация аргументов</strong> (<code>if "filepath" not in args: raise</code>) — тоже следствие низкоуровневого API, который не валидирует по схеме. Дублирование схемы в коде; на SDK с автоматической валидацией — вред.</li>
+<li><strong>Схема из аннотаций и docstring</strong> (ADK + <code>adk_to_mcp_tool_type</code> в GA; Pydantic <code>Annotated[..., Field]</code> в FastMCP) — механика конкретного стека. Универсален принцип: описание и ограничения объявляются рядом с сигнатурой и не могут разойтись с ней.</li>
+<li><strong>Санитизация схемы</strong> под Claude Desktop (<code>additionalProperties</code> → boolean) и под Vertex AI (схлопывание nullable <code>anyOf</code>). Переносится не код, а процедура: проверить сгенерированную схему на целевых клиентах.</li>
+<li><strong>Подкласс FastMCP с переопределением <code>_register_tool</code></strong> и обращением к <code>_local_provider._components</code> — решение конкретной задачи через приватный API. Идея (навесить сквозную логику при регистрации) универсальна, реализация — нет.</li>
+<li><strong>Обход дедлока <code>google.auth.default()</code> на Windows</strong> патчем <code>subprocess.Popen</code> — узкий частный случай. Но урок общий: <em>любой</em> подпроцесс, унаследовавший stdio, портит канал JSON-RPC.</li>
+<li><strong>Собственная продуктовая телеметрия</strong> с Supabase, UUID и consent-диалогом в blender-mcp — продуктовое решение вендора, а не архитектура MCP-сервера. Переносится только принцип: телеметрия не блокирует и не ломает вызов (очередь + фоновый воркер + проглатывание ошибок).</li>
+</ul>
+</section>
+<hr class="sep">
+
+<section id="s18">
+<h2><span class="n">18</span><span>Reference architecture</span></h2>
+<p>Проверенная против шести проектов и изменённая относительно исходной гипотезы в двух местах: <strong>Domain схлопнут</strong> (у сервера-интеграции нет своего домена — есть анти-коррупционный слой) и <strong>добавлен resolver</strong>, которого в гипотезе не было.</p>
+
+<div class="stack">
+<div class="layer"><div class="t">MCP-клиент</div><div class="d">модель + хост. Читает описания, выбирает инструмент, читает результат</div></div>
+<div class="arrow">│ JSON-RPC · stdio | streamable-http</div>
+<div class="layer hl"><div class="t">MCP-адаптер · единственный слой, знающий про SDK</div><div class="d">схемы и описания · аннотации · политика набора инструментов · единая граница ошибок · проекция результата · lifespan · гигиена транспорта</div></div>
+<div class="arrow">│ вызов функции с обычными аргументами</div>
+<div class="layer"><div class="t">Resolver зависимостей (только при мультиарендности)</div><div class="d">контекст запроса → учётные данные → конфиг на запрос → проверенный клиент. Здесь и только здесь живёт аутентификация</div></div>
+<div class="arrow">│</div>
+<div class="layer"><div class="t">Прикладной слой · use-cases</div><div class="d">валидация смысла · оркестрация · доменные ошибки · лимиты. Зависимости приходят аргументами</div></div>
+<div class="arrow">│ через порт (интерфейс)</div>
+<div class="layer"><div class="t">Интеграция · анти-коррупционный слой</div><div class="d">клиент и пул · таймауты · ретраи · пагинация провайдера · перевод статус-кодов в доменные ошибки · from_upstream / to_view</div></div>
+<div class="arrow">│</div>
+<div class="layer"><div class="t">Внешняя система</div><div class="d">HTTP API · локальный сокет · БД · файловая система</div></div>
+</div>
+
+<h4>Сквозные, не являющиеся слоями</h4>
+<ul>
+<li><strong>Конфигурация</strong> — читается один раз на старте, передаётся вниз объектом. Никто, кроме неё, не читает окружение.</li>
+<li><strong>Логирование</strong> — доступно всем, ничего не знает ни о ком.</li>
+<li><strong>Доменные ошибки</strong> — определяются внизу, переводятся в ответ наверху.</li>
+</ul>
+
+<h4>Направление зависимостей</h4>
+<pre>adapters/mcp  ──→ application ──→ ports ←── infrastructure
+adapters/cli  ──→ application
+     │                │                          │
+     └────────────────┴──→ domain (errors, models) ←┘
+                      └──→ config ←──────────────────┘
+
+<i>Никогда:</i> <s>application ──→ adapters</s>   <s>domain ──→ что угодно</s></pre>
+
+<p>Единственная инверсия зависимостей, которая окупается сразу, — порт репозитория/клиента: без него юнит-тесты use-case'ов требуют сети. Всё остальное — прямые зависимости. Порт «на будущее», у которого одна реализация и нет тестовой подмены, — premature.</p>
+</section>
+<hr class="sep">
+
+<section id="s19">
+<h2><span class="n">19</span><span>Рекомендуемый skeleton</span></h2>
+<p>Итоговая структура отличается от гипотетической: нет отдельной папки <code>domain/</code> с сущностями (там только модели и ошибки), нет <code>repositories/</code> отдельно от <code>clients/</code>, нет <code>prompts/</code> и <code>resources/</code>, зато есть второй адаптер.</p>
+
+<pre>project/
+├── src/app/
+│   ├── <b>domain/</b>
+│   │   ├── errors.py           <i>иерархия + поля dev / user_message / hint / retryable</i>
+│   │   └── models.py           <i>from_upstream (ACL) и to_view (проекция)</i>
+│   ├── <b>application/</b>
+│   │   ├── ports.py            <i>единственная точка инверсии зависимостей</i>
+│   │   └── &lt;usecases&gt;.py       <i>валидация смысла, оркестрация, лимиты</i>
+│   ├── <b>infrastructure/</b>
+│   │   └── &lt;provider&gt;_client.py <i>сессия, таймауты, ретраи, маппинг ошибок</i>
+│   ├── <b>config/settings.py</b>       <i>единственное место, читающее окружение</i>
+│   ├── <b>container.py</b>             <i>composition root — НАД адаптерами</i>
+│   ├── <b>observability/logging.py</b> <i>stderr + маскирование по подстроке</i>
+│   └── <b>adapters/</b>
+│       ├── mcp/
+│       │   ├── server.py       <i>сборка, lifespan, транспорт, гигиена stdio</i>
+│       │   ├── tools.py        <i>схемы, описания, политика, проекции</i>
+│       │   └── boundary.py     <i>доменная ошибка → ответ для модели + тайминг</i>
+│       └── cli/main.py         <i>второй потребитель — проверка границы</i>
+├── tests/
+│   ├── unit/                   <i>логика с фейком порта — основная масса</i>
+│   ├── integration/            <i>граница с провайдером, подменён транспорт</i>
+│   └── protocol/               <i>in-process MCP-клиент: имена, схема, политика</i>
+├── Dockerfile                  <i>multi-stage, non-root, PYTHONUNBUFFERED=1</i>
+├── pyproject.toml
+└── README.md</pre>
+
+<h4>Инвариант для CI</h4>
+<pre>grep -rl "^from fastmcp\|^import fastmcp\|^from mcp\b" src/ \
+  | grep -v "src/app/adapters/mcp/"
+<i># должно быть пусто</i></pre>
+
+<h4>Что удалить, если сервер маленький</h4>
+<p><code>application/ports.py</code> и <code>container.py</code> (звать клиент напрямую), <code>adapters/cli/</code> (если второго потребителя действительно не будет), <code>tests/integration/</code> (если нет внешней системы).</p>
+<h4>Что не удалять никогда</h4>
+<p><code>domain/errors.py</code>, <code>config/settings.py</code>, <code>adapters/mcp/boundary.py</code>, <code>tests/protocol/</code>. Это ровно те четыре вещи, отсутствие которых в исследованных проектах дало наблюдаемые дефекты: потерянный тип ошибки, конфигурация россыпью, «Caught Exception» вместо подсказки модели и регрессии контракта инструментов.</p>
+</section>
+<hr class="sep">
+
+<section id="s20">
+<h2><span class="n">20</span><span>Минимальная reference implementation</span></h2>
+<p>Полный скелет на нейтральном домене (каталог элементов) лежит в <code class="mono">mcp-skeleton/</code> рядом с этим отчётом. Ниже — четыре фрагмента, показывающие границы. Предметная область выбрана бессодержательной намеренно.</p>
+
+<h4>Инструмент — только схема, вызов и проекция</h4>
+<pre>@tool("search_items", writes=False,
+      annotations={"title": "Search items", "readOnlyHint": True})
+def search_items(
+    query: Annotated[str, Field(
+        description="Free-text search term. Required. Matches title and body. "
+                    "Example: 'quarterly invoice'.", min_length=1)],
+    limit: Annotated[int, Field(default=20, ge=1, le=50,
+        description="Maximum items in this page (1-50). "
+                    "Larger values are clamped to the maximum, not rejected.")] = 20,
+    cursor: Annotated[str | None, Field(default=None,
+        description="Opaque pagination token. Pass 'next_cursor' from a previous "
+                    "response to get the following page.")] = None,
+) -&gt; dict:
+    """Search items in the catalog.
+
+    Returns one page of results. When 'has_more' is true the result is
+    incomplete — call again with 'cursor' set to 'next_cursor' before
+    drawing conclusions about totals.
+    """
+    page = catalog.search_items(container.items, query=query,
+                                limit=limit, cursor=cursor)
+    return {"status": "success", **page.to_view()}</pre>
+
+<h4>Use-case — зависимость аргументом, доменные ошибки</h4>
+<pre>def search_items(repo: <b>ItemRepository</b>, *, query: str, limit: int | None = None) -&gt; Page:
+    if not query.strip():
+        raise <b>ValidationError</b>("query is empty",
+            user_message="query must not be empty.",
+            hint="Pass a search term, e.g. query='invoice'.")
+    return repo.search(query=query.strip(), limit=_clamp_limit(limit))</pre>
+
+<h4>Граница ошибок — одна, на регистрации</h4>
+<pre>def tool_boundary(fn):
+    @functools.wraps(fn)
+    def wrapper(*a, **kw):
+        started = time.monotonic()
+        try:
+            result = fn(*a, **kw)
+        except <b>AppError</b> as exc:                  <i># ожидаемый доменный отказ</i>
+            logger.info("tool=%s outcome=domain_error code=%s", name, exc.code)
+            return exc.<b>to_payload</b>()               <i># модель читает и исправляется</i>
+        except Exception as exc:                  <i># неожиданное</i>
+            logger.<b>exception</b>("tool=%s outcome=unhandled", name)
+            raise <b>ToolError</b>(f"{name} failed: {type(exc).__name__}")
+        logger.info("tool=%s outcome=ok duration_ms=%.0f", name, ...)
+        return result
+    return wrapper</pre>
+
+<h4>Ретрай, знающий про идемпотентность</h4>
+<pre>except <b>_RETRYABLE_CONNECT</b>:        <i># ConnectError, ConnectTimeout — сервер не видел запрос</i>
+    self._sleep_backoff(attempt); continue
+except httpx.<b>TimeoutException</b>:    <i># read/write — мутация могла уже примениться</i>
+    if <b>not idempotent</b> or attempt + 1 == attempts: break
+    self._sleep_backoff(attempt); continue</pre>
+
+<p>В скелете к этому прилагаются: <code>Settings.from_env()/validate()</code>, маскирующий логгер, <code>Container</code> как composition root, CLI-адаптер поверх тех же use-case'ов, три уровня тестов (включая протокольные через in-process клиент) и multi-stage Dockerfile.</p>
+</section>
+<hr class="sep">
+
+<section id="s21">
+<h2><span class="n">21</span><span>Модель архитектурной зрелости</span></h2>
+
+<div class="ladder">
+<div class="rung">
+<div class="lv"><b>1</b>Minimal</div>
+<div>
+<h5>Один файл, 1–5 инструментов, один пользователь, stdio</h5>
+<p><strong>Появляется:</strong> регистрация инструментов, описания с примерами, аннотация read-only, таймаут, логи в stderr.</p>
+<p><strong>Ещё не нужно:</strong> слои, порты, DI, фильтрация инструментов, протокольные тесты.</p>
+<p><strong>Похоже на:</strong> ранний mcp-obsidian. <strong>Граница уровня:</strong> появился второй разработчик или седьмой инструмент.</p>
+</div>
+</div>
+
+<div class="rung">
+<div class="lv"><b>2</b>Structured</div>
+<div>
+<h5>Разделены адаптер, логика и интеграция</h5>
+<p><strong>Появляется:</strong> SDK только в адаптере; тонкие handler'ы; отдельный клиент с переиспользованием; типизированный конфиг; доменные ошибки с <code>hint</code>; единая граница ошибок; юнит-тесты логики без MCP.</p>
+<p><strong>Ещё не нужно:</strong> мультиарендность, circuit breaker, toolsets, кэши.</p>
+<p><strong>Похоже на:</strong> google-analytics-mcp (структура есть, тестов нет). <strong>Граница уровня:</strong> сервер попал к чужим людям.</p>
+</div>
+</div>
+
+<div class="rung">
+<div class="lv"><b>3</b>Production</div>
+<div>
+<h5>Работает у кого-то, кроме автора</h5>
+<p><strong>Появляется:</strong> валидация конфига на старте с внятным сообщением; ретраи с учётом идемпотентности; пагинация и серверные лимиты; маскирование секретов; протокольные тесты контракта; lifespan и корректное завершение (включая SIGPIPE); полная гигиена stdio; read-only режим; Docker multi-stage non-root; политика проверяется при вызове, а не только при листинге.</p>
+<p><strong>Ещё не нужно:</strong> multi-tenant, OTEL, SSRF-пиннинг, circuit breaker.</p>
+<p><strong>Похоже на:</strong> gemini-notebook-mcp-cli. <strong>Граница уровня:</strong> HTTP-транспорт, несколько пользователей или несколько провайдеров.</p>
+</div>
+</div>
+
+<div class="rung">
+<div class="lv"><b>4</b>Platform</div>
+<div>
+<h5>Много инструментов, арендаторов, провайдеров</h5>
+<p><strong>Появляется:</strong> resolver учётных данных на запрос и отказ от глобальных кред при анонимном вызове; toolsets и бюджет контекста; кэш валидации с дедупликацией; rate limiting и circuit breaker; SSRF с пиннингом DNS; санитизация схемы под клиентов; устаревание инструментов как процесс; e2e против живых стендов; трассировка и метрики.</p>
+<p><strong>Где начинается overengineering:</strong> всё из этого списка на уровне 1–2. Порт с одной реализацией и без тестовой подмены; spec-объект, параметризующий резолвер для двух сервисов; собственная обёртка над SDK «на будущее».</p>
+<p><strong>Похоже на:</strong> mcp-atlassian.</p>
+</div>
+</div>
+</div>
+
+<div class="callout">
+<span class="lbl">Как двигаться по уровням</span>
+<p>Переход 1→2 стоит дёшево и окупается почти всегда. Переход 2→3 — это работа примерно на неделю и обязателен, как только сервером пользуется кто-то, кроме автора. Переход 3→4 дорогой и оправдан только требованиями: мультиарендностью, квотами провайдера, размером поверхности. Прыгать с 1 на 4 — самая дорогая из типичных ошибок.</p>
+</div>
+</section>
+<hr class="sep">
+
+<section id="s22">
+<h2><span class="n">22</span><span>MCP Server Baseline</span></h2>
+<p>Список выведен из исследования: каждый пункт присутствует минимум в двух проектах выборки <strong>и</strong> его отсутствие в каком-то из проектов дало наблюдаемый дефект.</p>
+
+<ul class="checklist">
+<li><span class="box">☐</span><div><b>MCP-адаптер как отдельный слой</b><span>Зачем: протокол меняется, логика — нет; появляется второй способ вызова. Когда: всегда, кроме одноразового скрипта. Можно не делать: если сервер — один файл на 100 строк и останется таким.</span><em>Проверка: grep по импортам SDK находит только адаптер</em></div></li>
+<li><span class="box">☐</span><div><b>Схема с ограничениями, а не только с прозой</b><span>Зачем: клиент валидирует схему до вызова, экономя модели цикл. Когда: всегда. Можно не делать: никогда.</span><em>Проверка: у каждого параметра есть description; у перечислимых — enum; у числовых — границы</em></div></li>
+<li><span class="box">☐</span><div><b>Прикладной слой с явными зависимостями</b><span>Зачем: тестируемость и повторное использование. Когда: &gt;5 инструментов или есть второй потребитель. Можно не делать: тонкая обёртка над одним API без логики.</span><em>Проверка: use-case вызывается из теста без MCP и без сети</em></div></li>
+<li><span class="box">☐</span><div><b>Граница интеграции с ACL</b><span>Зачем: изменение формата провайдера не ломает инструменты; модель не видит сырой payload. Когда: есть внешняя система. Можно не делать: данные и так в нужной форме.</span><em>Проверка: сырой ответ провайдера не встречается в возвращаемом значении инструмента</em></div></li>
+<li><span class="box">☐</span><div><b>Конфигурация одним объектом</b><span>Зачем: валидируемость, тестируемость, отсутствие скрытых зависимостей. Когда: всегда, если есть хоть одна переменная окружения. Можно не делать: нет конфигурации вообще.</span><em>Проверка: os.getenv встречается ровно в одном файле</em></div></li>
+<li><span class="box">☐</span><div><b>Структурированные ошибки с подсказкой</b><span>Зачем: модель может исправиться сама вместо тупика. Когда: всегда. Можно не делать: никогда.</span><em>Проверка: ответ при ошибке содержит что не вышло, retryable и hint</em></div></li>
+<li><span class="box">☐</span><div><b>Единая граница ошибок</b><span>Зачем: один контракт вместо N копий; трейсбек не уходит модели. Когда: &gt;3 инструментов. Можно не делать: 1–2 инструмента.</span><em>Проверка: try/except в теле инструмента отсутствует</em></div></li>
+<li><span class="box">☐</span><div><b>Логи в stderr с маскированием секретов</b><span>Зачем: stdout — канал протокола; токен в логе — инцидент. Когда: всегда. Можно не делать: никогда.</span><em>Проверка: тест, что значение с ключом *token* не попадает в вывод</em></div></li>
+<li><span class="box">☐</span><div><b>Гигиена stdio</b><span>Зачем: любая посторонняя запись в stdout ломает сессию. Когда: stdio-транспорт. Можно не делать: только HTTP.</span><em>Проверка: UTF-8, перехват stdout, SIGPIPE, подпроцессы со stdin=DEVNULL</em></div></li>
+<li><span class="box">☐</span><div><b>Явные таймауты на всех внешних вызовах</b><span>Зачем: зависший запрос вешает сессию целиком. Когда: есть внешняя система. Можно не делать: никогда.</span><em>Проверка: ни одного вызова клиента без таймаута</em></div></li>
+<li><span class="box">☐</span><div><b>Юнит-тесты логики без MCP</b><span>Зачем: быстрый цикл и доказательство, что граница проведена. Когда: всегда. Можно не делать: никогда.</span><em>Проверка: основная масса тестов не импортирует SDK</em></div></li>
+<li><span class="box">☐</span><div><b>Протокольные тесты контракта</b><span>Зачем: ловят регрессии, ломающие пользователей — имена, схему, политику. Когда: с уровня 3. Можно не делать: личный сервер на один вечер.</span><em>Проверка: in-process клиент, тест на состав инструментов и на политику при вызове</em></div></li>
+<li><span class="box">☐</span><div><b>Границы безопасности</b><span>Зачем: модель можно переубедить содержимым чужого ответа. Когда: всегда хотя бы минимально. Можно не делать: никогда.</span><em>Проверка: минимальные права токена, read-only режим, отказ от внешнего bind без auth, политика при вызове</em></div></li>
+<li><span class="box">☐</span><div><b>Пагинация с явной неполнотой</b><span>Зачем: иначе модель уверенно отвечает по обрезанным данным. Когда: любая выдача списка. Можно не делать: выдача заведомо ограничена.</span><em>Проверка: has_more присутствует и покрыт тестом</em></div></li>
+<li><span class="box">☐</span><div><b>Lifespan и корректное завершение</b><span>Зачем: соединения закрываются, состояние не в глобалах. Когда: есть дорогой ресурс. Можно не делать: сервер без состояния.</span><em>Проверка: нет изменяемых переменных на уровне модуля</em></div></li>
+</ul>
+</section>
+<hr class="sep">
+
+<section id="s23">
+<h2><span class="n">23</span><span>Ключевые выводы</span></h2>
+
+<ol>
+<li><strong>MCP — это транспорт и словарь, а не архитектура.</strong> Лучшее доказательство — mcpo: он механически превращает <code>inputSchema</code> в REST-эндпоинт. Если инструмент так переводится, значит, он и был схемой плюс функцией. Стройте приложение, к которому MCP прикручивается, а не наоборот.</li>
+<li><strong>Проверка границы — это второй потребитель.</strong> Без CLI (или HTTP-API, или хотя бы юнит-тестов, зовущих логику напрямую) «разделение слоёв» остаётся декларацией. Проект, у которого второй потребитель есть, оказался единственным с по-настоящему чистым сервисным слоем.</li>
+<li><strong>У MCP-сервера два интерфейса, и они одинаково важны.</strong> Один — код, читаемый людьми. Второй — схемы, описания и сообщения об ошибках, читаемые моделью. Второй почти никогда не ревьюят, хотя от него зависит, будет ли сервер работать.</li>
+<li><strong>Ошибка — это фича продукта.</strong> Разница между «Caught Exception. Error: 404» и «Notebook X does not exist. Run 'nlm notebook list' to see available notebooks» — это разница между тупиком и продолжением работы.</li>
+<li><strong>Скрытие ≠ запрет.</strong> Единственный проект, где это осознали, осознал через CVE. Любая фильтрация инструментов должна применяться и при вызове по имени.</li>
+<li><strong>stdio — хрупкий канал, и это системная проблема.</strong> Четыре проекта из шести независимо написали защищающий код: подмена stdout, UTF-8 на Windows, запрет наследования stdio подпроцессами, SIGPIPE, отключение баннеров. В новом проекте это делается один раз в десяти строках.</li>
+<li><strong>Поверхность инструментов — бюджет.</strong> 98 описаний лежат в контексте модели постоянно. Консолидация через дискриминатор и включаемые группы — не косметика, а работа над качеством вывода.</li>
+<li><strong>Протокол богаче, чем используют.</strong> Ноль resources, один prompt, ноль <code>outputSchema</code> на шесть проектов. Не проектируйте под неиспользуемые возможности — но и не считайте их отсутствие обоснованным выбором.</li>
+<li><strong>Официальность и популярность не коррелируют с качеством.</strong> Вендорский google-analytics-mcp имеет один тестовый файл; в самом популярном blender-mcp всё живёт в глобальных переменных; при этом у обоих есть приёмы, которых нет больше нигде (генерация примеров из типов, AST-allowlist).</li>
+<li><strong>Главный вопрос к каждой абстракции — «кто второй».</strong> Порт с одной реализацией и без подмены в тестах, слой без второго потребителя, обёртка над SDK «на будущее» — premature. Порт, ради которого тест перестаёт ходить в сеть, окупается в тот же день.</li>
+</ol>
+</section>
+<hr class="sep">
+
+<section id="method">
+<h2><span class="n">A</span><span>Метод и ограничения</span></h2>
+<h4>Как проводилось</h4>
+<ul>
+<li>Работа велась по исходному коду локальных клонов, а не по README. Для каждого проекта: снята структура и метрики, прослежены полные пути выполнения на 2–3 реальных инструментах, прочитаны ключевые модули по двенадцати инженерным осям.</li>
+<li>Количественные утверждения (число файлов, строк, инструментов, импортов SDK) получены поиском по репозиториям и приведены в §2 и §3.</li>
+<li>Утверждения об отсутствии (resources, prompts, outputSchema, OpenTelemetry, correlation ID) проверены поиском по исходникам всех шести проектов.</li>
+<li>Каждый паттерн оценивался по трём вопросам: следует ли он из природы MCP; следует ли из требований конкретного проекта; является ли он следствием SDK. Классификация A/B/C в §4 — результат этой оценки, а не частоты встречаемости.</li>
+</ul>
+
+<h4>Ограничения, которые стоит держать в уме</h4>
+<ul>
+<li><strong>Выборка мала и смещена.</strong> Шесть проектов, все на Python. Выводы про TypeScript-экосистему не проверялись и переносятся по аналогии.</li>
+<li><strong>Не проводился полноценный аудит безопасности.</strong> Раздел §10 описывает найденные в коде архитектурные меры, а не полноту защиты.</li>
+<li><strong>Код скелета не запускался.</strong> Песочница исполнения в этой сессии была недоступна, поэтому <code>mcp-skeleton/</code> проверен чтением, а не прогоном <code>pytest</code>. Перед использованием стоит выполнить <code>pip install -e ".[dev]"</code> и <code>pytest</code>; вероятные места для правки — детали API FastMCP (форма <code>result.data</code> и <code>annotations</code> зависят от минорной версии).</li>
+<li><strong>Возраст кода различается.</strong> Часть решений в старых проектах отражает ограничения SDK, которых уже нет. Там, где это заметно, отмечено в тексте.</li>
+</ul>
+
+<div class="foot">
+Исследование по шести репозиториям · сентябрь 2026 · сопровождающий код: <span class="mono">mcp-skeleton/</span>
+</div>
+</section>
+
+</div>
+</main>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement;
+  var btn=document.getElementById('themer');
+  btn.addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme');
+    if(!cur){
+      cur=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+    }
+    root.setAttribute('data-theme',cur==='dark'?'light':'dark');
+  });
+
+  var links=[].slice.call(document.querySelectorAll('#toc a'));
+  var map={};
+  links.forEach(function(a){
+    var el=document.getElementById(a.getAttribute('href').slice(1));
+    if(el){map[el.id]=a;}
+  });
+  if(window.IntersectionObserver){
+    var obs=new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('on');});
+          if(map[e.target.id]){map[e.target.id].classList.add('on');}
+        }
+      });
+    },{rootMargin:'-10% 0px -80% 0px',threshold:0});
+    Object.keys(map).forEach(function(id){obs.observe(document.getElementById(id));});
+  }
+})();
+</script>
+</body>
+</html>
