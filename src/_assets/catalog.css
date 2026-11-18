@@ -51,6 +51,8 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 }
 
 .hero {
+  position: relative;
+  isolation: isolate;
   padding-block: clamp(40px, 5vw, 64px) 36px;
   border-bottom: 1px solid var(--line);
 }
@@ -67,6 +69,51 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
   color: var(--muted);
   font-size: clamp(16px, 2vw, 21px);
 }
+
+.hero-network {
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  right: 6%;
+  width: clamp(148px, 24vw, 244px);
+  aspect-ratio: 1;
+  transform: translateY(-50%) rotate(-14deg);
+  border: 1px solid #c4fc8d61;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #c4fc8d50 1px, transparent 1.5px) center / 12px 12px,
+    radial-gradient(circle at 45% 40%, #c4fc8d1f, transparent 72%);
+  box-shadow: 0 0 64px #c4fc8d16, inset 0 0 30px #c4fc8d13;
+  pointer-events: none;
+}
+
+.network-orbit {
+  position: absolute;
+  inset: 0 26%;
+  transform: rotate(var(--orbit-angle));
+  border: 1px solid #c4fc8d72;
+  border-radius: 50%;
+}
+
+.network-orbit:nth-child(1) { --orbit-angle: 18deg; }
+.network-orbit:nth-child(2) { --orbit-angle: 78deg; }
+.network-orbit:nth-child(3) { --orbit-angle: 138deg; }
+
+.network-orbit::before,
+.network-orbit::after {
+  content: "";
+  position: absolute;
+  width: 5px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.network-orbit::before { top: 33%; left: 2%; }
+.network-orbit::after { bottom: 32%; right: 2%; opacity: .65; }
+.network-orbit:nth-child(2)::before { top: 57%; left: 0; }
+.network-orbit:nth-child(3)::after { bottom: 56%; right: 0; }
 
 .catalog { padding-bottom: 64px; }
 
@@ -125,6 +172,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 @media (max-width: 600px) {
   .shell { width: calc(100% - 36px); }
   .site-header { min-height: 66px; }
+  .hero-network { top: 55%; right: 0; opacity: .27; }
   .category { grid-template-columns: 1fr; gap: 5px; }
   .category h2 { margin-top: 0; }
   .entry { padding-inline: 0; }

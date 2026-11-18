@@ -6,3 +6,4 @@
 - Список между маркерами `catalog:start` и `catalog:end` в `src/index.html` обновляет `python scripts/build_catalog.py`. При изменении состава каталога запусти генератор и проверь diff. Главная оформлена как тёмный указатель, категория React идёт первой.
 - Для локального просмотра из корня проекта запусти `python -m http.server 8000 --directory src` и открой `http://localhost:8000/`.
 - Workflow в `.github/workflows/pages.yml` публикует `src` после push в `main`. Перед коммитом проверь автора и коммитера через `git var GIT_AUTHOR_IDENT` и `git var GIT_COMMITTER_IDENT`. Для этого репозитория используй имя и email аккаунта `itsanti`.
+- Оформляй сообщения коммитов по Conventional Commits в формате `<type>(<scope>): <summary>`. Область можно опустить. Например, `feat(catalog): add a visualization` или `docs: update project instructions`.
