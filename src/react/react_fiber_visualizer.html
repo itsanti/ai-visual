@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#091321">
+  <title>React Fiber — интерактивная визуализация</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #08111f;
+      --panel: #101d2d;
+      --panel-2: #142235;
+      --panel-3: #192a40;
+      --border: #2a3a4e;
+      --text: #eaf1fb;
+      --muted: #9aaac0;
+      --faint: #71849c;
+      --blue: #78aaff;
+      --cyan: #70e1ec;
+      --green: #71e8b4;
+      --amber: #ffd080;
+      --pink: #e6a9ee;
+      --radius: 17px;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0; min-height: 100vh; color: var(--text);
+      background:
+        radial-gradient(ellipse 760px 510px at 11% -6%, rgba(28,94,144,.24), transparent 70%),
+        radial-gradient(ellipse 770px 560px at 90% 1%, rgba(57,69,131,.18), transparent 70%),
+        var(--bg);
+      font: 14px/1.52 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before { content:""; position:fixed; inset:0; pointer-events:none; z-index:-1; opacity:.17;
+      background-image:radial-gradient(#677f9b .55px,transparent .55px); background-size:23px 23px; }
+    button { font:inherit; cursor:pointer; }
+    button:focus-visible, a:focus-visible { outline:2px solid var(--cyan); outline-offset:3px; }
+    button:disabled { cursor:not-allowed; opacity:.38; }
+    a { color:var(--cyan); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .shell { max-width:1600px; margin:0 auto; padding:31px 32px 55px; }
+    .masthead { display:flex; justify-content:space-between; align-items:center; gap:24px; margin-bottom:24px; }
+    .brand { display:flex; align-items:center; gap:15px; }
+    .brand-mark { width:46px; height:46px; border-radius:14px; background:rgba(112,225,236,.1); border:1px solid rgba(112,225,236,.34); display:grid;place-items:center; flex-shrink:0; }
+    .brand-mark svg { width:30px;height:30px; }
+    .eyebrow { text-transform:uppercase; font-size:11px; letter-spacing:.18em; font-weight:800; color:var(--cyan); }
+    h1 { font-size:clamp(25px,2.5vw,37px); line-height:1.16; margin:4px 0 6px; letter-spacing:-.045em; font-weight:780; }
+    .masthead p { margin:0; color:var(--muted); font-size:14px; }
+    .lab-badge { flex-shrink:0; border-radius:999px; border:1px solid var(--border); padding:9px 14px; color:var(--muted); font-size:12px; background:#101e2ec9; display:flex; align-items:center; gap:8px; }
+    .lab-badge::before { content:""; width:7px; height:7px; background:var(--green); border-radius:100%; box-shadow:0 0 14px #71e8b46a; }
+    .panel { background:linear-gradient(155deg, rgba(22,37,55,.96),rgba(14,27,43,.97)); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 10px 35px rgba(0,0,0,.09); }
+    .toolbar { padding:18px 20px; display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; margin-bottom:16px; }
+    .toolbar-copy { min-width:230px; }
+    .toolbar-copy b { display:block; font-size:14px; }
+    .toolbar-copy span { display:block; font-size:12px; color:var(--muted); margin-top:3px; }
+    .controls { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+    .btn { border-radius:10px; padding:10px 13px; font-size:13px; font-weight:690; display:inline-flex; align-items:center; justify-content:center; gap:9px; border:1px solid #3a4b60; background:#192a40; color:#d8e5f7; transition:background .15s, border-color .15s, transform .15s; }
+    .btn:not(:disabled):hover { background:#243b55; border-color:#6986a4; }
+    .btn:not(:disabled):active { transform:translateY(1px); }
+    .btn.primary { color:#071627; background:var(--cyan); border-color:var(--cyan); }
+    .btn.primary:not(:disabled):hover { background:#a2f1f5; }
+    .btn.ghost { background:transparent; color:var(--muted); }
+    .btn .icon { font-size:18px; font-weight:500; line-height:1; }
+    .journey { padding:17px 20px 18px; margin-bottom:17px; }
+    .section-label { color:#a8b9cc; font-size:11px; font-weight:760; letter-spacing:.12em; text-transform:uppercase; }
+    .steps { margin-top:13px; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; }
+    .step { min-width:0; border:1px solid #2c3d51; background:#0c1929; border-radius:11px; padding:11px 8px; display:flex; align-items:center; gap:9px; color:var(--faint); transition:all .25s; }
+    .step-number { flex-shrink:0; width:24px;height:24px; border:1px solid #3a4e66; background:#19283a; border-radius:7px; display:grid; place-items:center; font-family:ui-monospace,monospace; font-size:11px; font-weight:bold; }
+    .step-name { font-size:11px; font-weight:760; line-height:1.25; }
+    .step.active { border-color:#65cbe0; color:#dffaff; background:#103143; box-shadow:inset 0 0 0 1px rgba(112,225,236,.1); }
+    .step.active .step-number { background:var(--cyan); border-color:var(--cyan); color:#06212b; }
+    .step.done { color:#b9ddcc; border-color:#2a6959; background:#0c252a; }
+    .step.done .step-number { background:#164839; border-color:#307e65; color:var(--green); }
+    .layout { display:grid; grid-template-columns:minmax(305px, 350px) minmax(0,1fr); gap:17px; align-items:start; }
+    .side { display:flex; flex-direction:column; gap:17px; }
+    .panel-head { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:15px; }
+    .panel-title { margin:0; font-size:15px; font-weight:760; letter-spacing:-.012em; }
+    .subchip { border-radius:999px; padding:4px 9px; background:#182b3e; color:var(--muted); border:1px solid #33455a; font:600 11px ui-monospace,monospace; }
+    .preview-panel { padding:19px; }
+    .mock-browser { border:1px solid #33455b; border-radius:12px; overflow:hidden; background:#f6f8fc; color:#26364b; }
+    .browser-top { height:32px; background:#e6ebf4; border-bottom:1px solid #cdd5e3; display:flex; align-items:center; gap:6px; padding:0 11px; }
+    .dot { display:inline-block; height:8px;width:8px;border-radius:100%;background:#abb8cb; }
+    .browser-address { margin:auto; color:#8090a4;font:500 10px ui-monospace,monospace; }
+    .mock-content { padding:20px 20px 23px; }
+    .mock-content h3 { margin:0 0 14px; font-size:16px; letter-spacing:-.025em; }
+    .mock-add { color:white; background:#286ddd; padding:9px 12px; border:0; border-radius:7px; font-size:12px; font-weight:750; }
+    .mock-add:hover:not(:disabled) { background:#165cc6; }
+    .mock-list { padding-left:22px; margin:16px 0 0; min-height:58px; font-size:13px; }
+    .mock-list li { padding:3px 0; }
+    .mock-list li.newly-committed { color:#0c7850; font-weight:780; animation:listPop .5s ease-out; }
+    @keyframes listPop { from { background:#c5f7df; transform:translateX(8px); } to { background:transparent; transform:translateX(0); } }
+    .screen-hint { margin-top:13px; font-size:12px; color:var(--muted); line-height:1.5; }
+    .state-cards { margin-top:13px; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .state-card { padding:10px 11px; background:#0b1828; border:1px solid #2a3a4e; border-radius:10px; }
+    .state-card span { font-size:10px; color:var(--muted); display:block; }
+    .state-card b { margin-top:3px; display:block; font-size:19px; font-family:ui-monospace,monospace; font-weight:780; color:var(--text); }
+    .state-card b.accent { color:var(--cyan); }
+    .code-panel { padding:19px 0 15px; overflow:hidden; }
+    .code-panel .panel-head { padding:0 19px; }
+    .code-wrap { overflow-x:auto; padding:4px 0 12px; }
+    .code { margin:0; white-space:normal; color:#dce6fa; font:11.2px/1.77 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace; counter-reset:line; }
+    .code-line { padding:0 15px 0 13px; white-space:pre; display:block; width:max-content; min-width:100%; border-left:2px solid transparent; counter-increment:line; transition:background .23s; }
+    .code-line::before { content:counter(line,decimal-leading-zero); display:inline-block; width:25px; margin-right:15px; color:#52657c; user-select:none; }
+    .code-line.hl { background:rgba(112,225,236,.105); border-left-color:var(--cyan); }
+    .kw { color:#d0a4fd; }.fn { color:#8cd4fa; }.str { color:#bbd889; }.num { color:#ffcf84; }.jsx { color:#85b7fd; }.prop { color:#f5bc93; }.cm { color:#688198; }
+    .code-foot { padding:10px 19px 0; border-top:1px solid var(--border); color:var(--muted); font-size:11px; }
+    .main { display:flex; flex-direction:column; gap:17px; min-width:0; }
+    .explanation { display:grid; grid-template-columns: minmax(0,1fr) auto; padding:20px 22px; gap:14px; min-height:144px; background:linear-gradient(130deg,#152d40,#12243b 75%); }
+    .explanation h2 { margin:5px 0 7px; font-size:19px; letter-spacing:-.035em; }
+    .explanation p { margin:0; font-size:13px; color:#bdcce0; line-height:1.65; max-width:820px; }
+    .stage-count { text-align:right; min-width:83px; padding-top:6px; }
+    .stage-count b { font-size:28px; font-family:ui-monospace,monospace; font-weight:500; color:var(--cyan); }
+    .stage-count small { display:block; color:var(--muted); font-size:11px; }
+    .tree-wrap { padding:18px 19px 20px; }
+    .tree-topline { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:13px; }
+    .legend { display:flex; flex-wrap:wrap; gap:7px 14px; font-size:11px; color:var(--muted); }
+    .legend span { display:inline-flex; align-items:center; gap:6px; }
+    .keybox { width:9px;height:9px;border-radius:3px;display:inline-block;background:var(--blue); }
+    .keybox.green { background:var(--green); }.keybox.amber { background:var(--amber); }
+    .tree-board { position:relative; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:46px; }
+    .tree-card { position:relative; z-index:1; min-width:0; border:1px solid #34465a; border-radius:12px; overflow:hidden; background:#0b1726; }
+    .tree-card.pending { border-color:#315b6e; }
+    .tree-card-head { display:flex; justify-content:space-between; align-items:center; gap:10px; border-bottom:1px solid #2c3d50; padding:11px 12px; background:#17273b; }
+    .tree-card-head strong { font-size:12px; letter-spacing:.015em; }
+    .tree-card-head small { color:var(--muted); font-size:10px; white-space:nowrap; }
+    .tree-head-left { display:flex; align-items:center; gap:7px; min-width:0; }
+    .tree-head-left .orb { display:inline-block; width:8px;height:8px;border-radius:50%;background:var(--blue); box-shadow:0 0 8px rgba(120,170,255,.35); }
+    .tree-card.pending .orb { background:var(--cyan); }
+    .fiber-list { padding:11px 7px 12px; min-height:288px; }
+    .fiber-row { position:relative; min-width:0; padding:2px 3px 2px calc(2px + var(--indent) * 15px); }
+    .fiber-row-inner { display:flex; align-items:center; gap:6px; min-width:0; }
+    .branch { display:block; flex-shrink:0; color:#53728a; width:9px; font:12px ui-monospace,monospace; }
+    .fiber-node { border-radius:8px; border:1px solid #33475f; background:#16283d; padding:6px 7px; display:flex; align-items:center; gap:7px; flex:1; min-width:0; position:relative; }
+    .fiber-node.tiny { background:#142438; }
+    .fiber-node.reuse { border-color:#3c6a77; background:#142b39; }
+    .fiber-node.add { border-color:#439879; background:#173c37; box-shadow:0 0 15px rgba(113,232,180,.07); }
+    .fiber-node.placement { border-color:#d3a051; background:#3b3029; box-shadow:0 0 15px rgba(255,208,128,.09); }
+    .fiber-node.just-committed { border-color:#439879; background:#18372f; }
+    .node-kind { font:650 9px ui-monospace,monospace; color:#a8c6e6; border-radius:4px; background:#25415b; padding:4px; min-width:27px; text-align:center; flex-shrink:0; }
+    .node-main { flex:1; min-width:0; display:flex; flex-direction:column; }
+    .node-main b { font:750 11px ui-monospace,monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .node-main small { font:10px ui-monospace,monospace; color:#94aec8; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; margin-top:2px; }
+    .node-tag { flex-shrink:0; font:760 9px ui-monospace,monospace; color:var(--cyan); border-radius:5px; padding:3px 4px; background:#163e49; }
+    .node-tag.new { color:var(--green); background:#154637; }
+    .node-tag.placement { color:var(--amber); background:#56422c; }
+    .node-tag.old { color:#b1bcce; background:#344254; }
+    .empty-tree { display:flex; min-height:272px; align-items:center; justify-content:center; flex-direction:column; color:#8498ad; text-align:center; padding:18px; font-size:12px; }
+    .empty-tree .empty-glyph { color:#49637c; font:35px/1 ui-monospace,monospace; margin-bottom:12px; }
+    .empty-tree strong { color:#b7c7d9; font-size:13px; font-weight:700; margin-bottom:5px; }
+    .alternate-links { pointer-events:none; position:absolute; inset:0; z-index:2; overflow:visible; }
+    .tree-foot { margin-top:13px; padding:11px 12px; background:#101f30; border:1px solid #283b4f; border-radius:10px; color:#adc0d2; font-size:12px; }
+    .tree-foot strong { color:#e3f1fc; }
+    .bottom-grid { display:grid; grid-template-columns:1fr 1fr; gap:17px; }
+    .data-panel { padding:18px 19px; }
+    .metric-line { margin-top:13px; display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:12px; padding:9px 0; border-bottom:1px solid #2a3a4e; }
+    .metric-line:last-child { border-bottom:none; padding-bottom:1px; }
+    .metric-line span { color:var(--muted); }
+    .metric-line b { color:#d9eafb; font:650 12px ui-monospace,monospace; text-align:right; }
+    .metric-line b.ok { color:var(--green); }
+    .metric-line b.wait { color:var(--amber); }
+    .event-log { padding:18px 19px; }
+    .log-stream { margin-top:11px; max-height:204px; min-height:157px; overflow:auto; scrollbar-color:#3c536a transparent; }
+    .log-item { display:flex; align-items:baseline; gap:9px; padding:7px 0; border-bottom:1px solid #26384d; font-size:11.5px; }
+    .log-item:last-child { border-bottom:0; }
+    .log-time { font:680 10px ui-monospace,monospace; color:#6e91ad; min-width:24px; }
+    .log-item span:last-child { color:#c5d2e2; }
+    .log-item.effect span:last-child { color:#d7c2ee; }
+    .log-item.dom span:last-child { color:#9ce1c4; }
+    .log-item.warn span:last-child { color:#f5d39e; }
+    .smallprint { margin:17px 2px 0; display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px 20px; color:#91a3b9; font-size:12px; line-height:1.6; }
+    .smallprint strong { color:#c9d7e7; }
+    .references { display:flex; gap:12px 18px; flex-wrap:wrap; }
+    .sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0; }
+    @media (max-width:1250px) {
+      .shell { padding:24px 20px 36px; }
+      .layout { grid-template-columns:300px minmax(0,1fr); }
+      .tree-board { gap:19px; }
+      .fiber-row { padding-left:calc(2px + var(--indent) * 11px); }
+      .node-tag { font-size:8px; }.node-main small { font-size:9px; }
+      .alternate-links { display:none; }
+    }
+    @media (max-width:1050px) {
+      .layout { grid-template-columns:1fr; }
+      .side { display:grid; grid-template-columns: minmax(260px,.78fr) minmax(310px,1fr); align-items:start; }
+      .tree-board { gap:35px; }
+      .fiber-row { padding-left:calc(2px + var(--indent) * 16px); }
+    }
+    @media (max-width:700px) {
+      .shell { padding:18px 11px 30px; }
+      .masthead { align-items:flex-start; }
+      .lab-badge { display:none; }
+      .steps { grid-template-columns:repeat(3,minmax(0,1fr)); }
+      .step { padding:9px 7px; }
+      .side,.bottom-grid { grid-template-columns:1fr; }
+      .tree-board { grid-template-columns:1fr; gap:13px; }
+      .tree-wrap { padding:16px 12px; }
+      .tree-card { max-width:unset; }
+      .fiber-list { min-height:auto; }
+      .empty-tree { min-height:105px; }
+      .fiber-row { padding-left:calc(5px + var(--indent) * 20px); }
+      .alternate-links { display:none; }
+      .explanation { grid-template-columns:1fr; padding:17px; min-height:unset; }
+      .stage-count { text-align:left; padding:0; }
+      .stage-count b,.stage-count small { display:inline; font-size:12px; }
+      .stage-count b { margin-right:7px; }
+      .tree-topline { align-items:flex-start; flex-direction:column; }
+      .toolbar { padding:15px; }
+    }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.001ms !important; transition-duration:.001ms !important; } }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <header class="masthead">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none"><ellipse cx="16" cy="16" rx="14" ry="5.6" stroke="#70e1ec" stroke-width="1.6"/><ellipse cx="16" cy="16" rx="14" ry="5.6" stroke="#70e1ec" stroke-width="1.6" transform="rotate(60 16 16)"/><ellipse cx="16" cy="16" rx="14" ry="5.6" stroke="#70e1ec" stroke-width="1.6" transform="rotate(120 16 16)"/><circle cx="16" cy="16" r="2.4" fill="#70e1ec"/></svg>
+      </div>
+      <div><div class="eyebrow">Interactive internals / учебная модель</div><h1>Как работает React Fiber</h1><p>От <code>setState</code> до нового DOM — на одном списке.</p></div>
+    </div>
+    <div class="lab-badge">Fiber Explorer · сценарий 01</div>
+  </header>
+
+  <section class="panel toolbar" aria-label="Управление визуализацией">
+    <div class="toolbar-copy"><b>Добавление элемента в список</b><span>Один клик → один цикл обновления Fiber</span></div>
+    <div class="controls">
+      <button class="btn primary" id="addBtn"><span class="icon">+</span> Добавить элемент</button>
+      <button class="btn" id="nextBtn" disabled><span class="icon">›</span> Следующий шаг</button>
+      <button class="btn" id="autoBtn"><span class="icon" id="autoIcon">▶</span> <span id="autoLabel">Автоматически</span></button>
+      <button class="btn ghost" id="resetBtn" title="Вернуться к исходному состоянию">↺ Сброс</button>
+    </div>
+  </section>
+
+  <section class="panel journey" aria-label="Этапы обновления">
+    <div class="section-label">Жизненный цикл одного обновления</div>
+    <div class="steps" id="steps">
+      <div class="step"><span class="step-number">01</span><span class="step-name">Update queue</span></div>
+      <div class="step"><span class="step-number">02</span><span class="step-name">beginWork</span></div>
+      <div class="step"><span class="step-number">03</span><span class="step-name">Reconcile</span></div>
+      <div class="step"><span class="step-number">04</span><span class="step-name">completeWork</span></div>
+      <div class="step"><span class="step-number">05</span><span class="step-name">Commit</span></div>
+      <div class="step"><span class="step-number">06</span><span class="step-name">useEffect</span></div>
+    </div>
+  </section>
+
+  <div class="layout">
+    <aside class="side">
+      <section class="panel preview-panel">
+        <div class="panel-head"><h2 class="panel-title">Что видит пользователь</h2><span class="subchip">DOM</span></div>
+        <div class="mock-browser">
+          <div class="browser-top"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="browser-address">localhost / ItemList</span></div>
+          <div class="mock-content">
+            <h3>Мой список</h3>
+            <button type="button" class="mock-add" id="previewAddBtn">+ Добавить элемент</button>
+            <ul class="mock-list" id="domList"><li>Элемент 1</li><li>Элемент 2</li></ul>
+          </div>
+        </div>
+        <div class="screen-hint" id="screenHint">DOM остаётся неизменным, пока React не дойдёт до commit.</div>
+        <div class="state-cards">
+          <div class="state-card"><span>На экране / DOM</span><b id="domCount">2</b></div>
+          <div class="state-card"><span>Следующий state</span><b class="accent" id="nextCount">—</b></div>
+        </div>
+      </section>
+      <section class="panel code-panel">
+        <div class="panel-head"><h2 class="panel-title">Исходный компонент</h2><span class="subchip">JSX · пример</span></div>
+        <div class="code-wrap"><pre class="code" aria-label="Код компонента ItemList"><code>
+<span class="code-line"><span class="kw">let</span> nextId = <span class="num">3</span>;</span>
+<span class="code-line"><span class="kw">function</span> <span class="fn">ItemList</span>() {</span>
+<span class="code-line" data-hl="2">  <span class="kw">const</span> [items, setItems] = <span class="fn">useState</span>([</span>
+<span class="code-line">    { id: <span class="num">1</span>, label: <span class="str">'Элемент 1'</span> },</span>
+<span class="code-line">    { id: <span class="num">2</span>, label: <span class="str">'Элемент 2'</span> }</span>
+<span class="code-line">  ]);</span>
+<span class="code-line"></span>
+<span class="code-line" data-hl="6">  <span class="fn">useEffect</span>(() =&gt; {</span>
+<span class="code-line" data-hl="6">    console.<span class="fn">log</span>(<span class="str">'setup'</span>, items.length);</span>
+<span class="code-line" data-hl="6">    <span class="kw">return</span> () =&gt; console.<span class="fn">log</span>(</span>
+<span class="code-line" data-hl="6">      <span class="str">'cleanup'</span>, items.length</span>
+<span class="code-line" data-hl="6">    );</span>
+<span class="code-line" data-hl="6">  }, [items.length]);</span>
+<span class="code-line"></span>
+<span class="code-line">  <span class="kw">function</span> <span class="fn">addItem</span>() {</span>
+<span class="code-line" data-hl="1">    <span class="kw">const</span> id = nextId++;</span>
+<span class="code-line" data-hl="1">    <span class="fn">setItems</span>(prev =&gt; [</span>
+<span class="code-line" data-hl="1">      ...prev, { id, label: <span class="str">`Элемент ${id}`</span> }</span>
+<span class="code-line" data-hl="1">    ]);</span>
+<span class="code-line">  }</span>
+<span class="code-line"></span>
+<span class="code-line" data-hl="2">  <span class="kw">return</span> (</span>
+<span class="code-line">    <span class="jsx">&lt;div&gt;</span></span>
+<span class="code-line">      <span class="jsx">&lt;button</span> <span class="prop">onClick</span>={addItem}<span class="jsx">&gt;</span>Добавить<span class="jsx">&lt;/button&gt;</span></span>
+<span class="code-line" data-hl="3">      <span class="jsx">&lt;ul&gt;</span></span>
+<span class="code-line" data-hl="3">        {items.<span class="fn">map</span>(item =&gt; (</span>
+<span class="code-line" data-hl="3">          <span class="jsx">&lt;li</span> <span class="prop">key</span>={item.id}<span class="jsx">&gt;</span>{item.label}<span class="jsx">&lt;/li&gt;</span></span>
+<span class="code-line" data-hl="3">        ))}</span>
+<span class="code-line">      <span class="jsx">&lt;/ul&gt;</span></span>
+<span class="code-line">    <span class="jsx">&lt;/div&gt;</span></span>
+<span class="code-line">  );</span>
+<span class="code-line">}</span>
+</code></pre></div>
+        <div class="code-foot">Подсвечиваются строки, относящиеся к текущему этапу.</div>
+      </section>
+    </aside>
+
+    <div class="main">
+      <section class="panel explanation" aria-live="polite">
+        <div><div class="eyebrow" id="phaseCaption">Исходное состояние</div><h2 id="phaseTitle">React ожидает обновления</h2><p id="phaseDescription">Сейчас есть одно актуальное Fiber-дерево — <b>current</b>. Оно соответствует DOM с двумя элементами. Нажми «Добавить элемент», затем проходи цикл по шагам.</p></div>
+        <div class="stage-count"><b id="stageFraction">0 / 6</b><small>этап обновления</small></div>
+      </section>
+
+      <section class="panel tree-wrap">
+        <div class="tree-topline"><h2 class="panel-title">Два представления Fiber-дерева</h2><div class="legend"><span><i class="keybox"></i> current</span><span><i class="keybox green"></i> новый Fiber</span><span><i class="keybox amber"></i> Placement</span></div></div>
+        <div class="tree-board" id="treeBoard">
+          <article class="tree-card">
+            <div class="tree-card-head"><span class="tree-head-left"><i class="orb"></i><strong id="currentTitle">current</strong></span><small id="currentSubtitle">актуально в DOM</small></div>
+            <div class="fiber-list" id="currentTree"></div>
+          </article>
+          <article class="tree-card pending" id="wipCard">
+            <div class="tree-card-head"><span class="tree-head-left"><i class="orb"></i><strong id="wipTitle">workInProgress</strong></span><small id="wipSubtitle">ожидает обновления</small></div>
+            <div class="fiber-list" id="wipTree"></div>
+          </article>
+          <svg class="alternate-links" id="alternateLinks" aria-hidden="true"></svg>
+        </div>
+        <div class="tree-foot" id="treeFoot"><strong>Обрати внимание:</strong> Fiber — не DOM-дерево. Это рабочие объекты React, которые связывают компоненты, состояние и запланированные изменения.</div>
+      </section>
+
+      <div class="bottom-grid">
+        <section class="panel data-panel">
+          <h2 class="panel-title">Что происходит внутри</h2>
+          <div class="metric-line"><span>Hook <code>useState</code></span><b id="stateMetric">2 элемента</b></div>
+          <div class="metric-line"><span>Update queue</span><b id="queueMetric">пуста</b></div>
+          <div class="metric-line"><span>Новые Fiber</span><b id="fiberMetric">0</b></div>
+          <div class="metric-line"><span>Изменения реального DOM</span><b id="domMetric">0</b></div>
+          <div class="metric-line"><span>Effect</span><b id="effectMetric">setup(2) уже выполнен</b></div>
+        </section>
+        <section class="panel event-log">
+          <div class="panel-head"><h2 class="panel-title">Журнал событий</h2><span class="subchip">trace</span></div>
+          <div class="log-stream" id="eventLog" aria-live="polite"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <footer class="smallprint">
+    <div style="max-width:830px"><strong>Границы модели.</strong> Это симулятор для понимания принципов, а не выполнение исходников React. Намеренно опущены lanes, batching, прерываемый рендер, bailout, детали связного списка Hooks и внутренние подэтапы commit. Реальный <code>useEffect</code> — passive effect, выполняется после commit; точный момент относительно отрисовки браузера может меняться.</div>
+    <div class="references"><a href="https://react.dev/learn/render-and-commit" target="_blank" rel="noopener noreferrer">React: Render and Commit ↗</a><a href="https://react.dev/reference/react/useEffect" target="_blank" rel="noopener noreferrer">React: useEffect ↗</a></div>
+  </footer>
+</div>
+<script>
+(() => {
+  'use strict';
+  const initial = () => [
+    { id: 1, label: 'Элемент 1' },
+    { id: 2, label: 'Элемент 2' }
+  ];
+  const phases = [
+    { caption:'Исходное состояние', title:'React ожидает обновления',
+      description:'Сейчас есть одно актуальное Fiber-дерево — current. Оно соответствует DOM с двумя элементами. Нажми «Добавить элемент», затем проходи цикл по шагам.',
+      foot:'Fiber — не DOM-дерево. Это рабочие объекты React, которые связывают компоненты, состояние и запланированные изменения.' },
+    { caption:'01 / Триггер обновления', title:'setItems ставит обновление в очередь',
+      description:'Обработчик события вызывает setItems(prev => [...prev, newItem]). React планирует работу для ItemList. На этом шаге старое current-дерево и DOM ещё не меняются.',
+      foot:'setState не означает немедленную вставку <li> в DOM. Сначала React должен вычислить следующий UI.' },
+    { caption:'02 / Render phase', title:'beginWork: React вычисляет следующий state',
+      description:'React подготавливает work-in-progress (WIP) и вызывает ItemList(). Для этого рендера useState даёт список на один элемент длиннее. JSX описывает будущий UI; useEffect пока не выполняется.',
+      foot:'current остаётся неизменным. WIP — черновик нового дерева; показаны только уже обработанные узлы.' },
+    { caption:'03 / Render phase', title:'Reconciliation: сравнение по type и key',
+      description:'React сопоставляет старые и новые дочерние элементы. <li key=1> и <li key=2> сохраняют идентичность благодаря key и типу; для нового key создаётся Fiber без пары в старом дереве.',
+      foot:'Зелёный узел создаётся впервые. Метка ↔ означает связь с alternate — соответствующим Fiber другого дерева. Существующие DOM-узлы не пересоздаются.' },
+    { caption:'04 / Render phase', title:'completeWork: подготовка к commit',
+      description:'WIP описывает готовое дерево. Новый <li> отмечен Placement: при commit его нужно вставить. Вычисления завершены, но DOM пользователя пока всё ещё показывает старый список.',
+      foot:'Placement — упрощённое обозначение внутренних флагов. Важно различать подготовку изменения и применение изменения.' },
+    { caption:'05 / Commit phase', title:'React применяет изменение к DOM',
+      description:'Теперь React вставляет новый <li> в настоящий DOM. Готовое workInProgress становится current. Предыдущее дерево остаётся alternate и может быть переиспользовано при следующем обновлении.',
+      foot:'Сейчас изменился DOM. Для этого сценария единственная содержательная DOM-операция — вставка одного <li>, без замены существующих <li>.' },
+    { caption:'06 / Passive effects', title:'useEffect: cleanup → setup',
+      description:'После commit React обрабатывает passive effects. Поскольку зависимость [items.length] изменилась, сначала вызывается cleanup со старым количеством, потом setup с новым. После этого можно запустить следующий цикл.',
+      foot:'useEffect не запускается в render. Он относится к посткоммитной работе; в зависимости от ситуации браузер может успеть отрисовать обновление до него.' }
+  ];
+  const ids = {
+    addBtn:document.getElementById('addBtn'),
+    previewAddBtn:document.getElementById('previewAddBtn'),
+    nextBtn:document.getElementById('nextBtn'),
+    autoBtn:document.getElementById('autoBtn'),
+    autoIcon:document.getElementById('autoIcon'),
+    autoLabel:document.getElementById('autoLabel'),
+    resetBtn:document.getElementById('resetBtn'),
+    steps:document.getElementById('steps'),
+    domList:document.getElementById('domList'),
+    domCount:document.getElementById('domCount'),
+    nextCount:document.getElementById('nextCount'),
+    screenHint:document.getElementById('screenHint'),
+    phaseCaption:document.getElementById('phaseCaption'),
+    phaseTitle:document.getElementById('phaseTitle'),
+    phaseDescription:document.getElementById('phaseDescription'),
+    stageFraction:document.getElementById('stageFraction'),
+    treeBoard:document.getElementById('treeBoard'),
+    alternateLinks:document.getElementById('alternateLinks'),
+    currentTree:document.getElementById('currentTree'),
+    wipTree:document.getElementById('wipTree'),
+    wipTitle:document.getElementById('wipTitle'),
+    wipSubtitle:document.getElementById('wipSubtitle'),
+    wipCard:document.getElementById('wipCard'),
+    treeFoot:document.getElementById('treeFoot'),
+    stateMetric:document.getElementById('stateMetric'),
+    queueMetric:document.getElementById('queueMetric'),
+    fiberMetric:document.getElementById('fiberMetric'),
+    domMetric:document.getElementById('domMetric'),
+    effectMetric:document.getElementById('effectMetric'),
+    eventLog:document.getElementById('eventLog')
+  };
+  let items = initial();
+  let nextId = 3;
+  let stage = 0;
+  let tx = null;
+  let cycle = 0;
+  let entries = [];
+  let logSequence = 0;
+  let timer = null;
+  let playing = false;
+  let lastAnimatedId = null;
+
+  const escapeHTML = (v) => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const note = (kind, message) => {
+    entries.push({ kind, message, seq:++logSequence });
+    if(entries.length > 70) entries = entries.slice(-70);
+  };
+
+  function makeRow(tree, id, depth, type, name, detail, status = '', tag = '') {
+    const statusClass = status === 'placement' ? 'placement' : status === 'new' ? 'add' : status === 'commit' ? 'just-committed' : status === 'reuse' ? 'reuse' : '';
+    const tagClass = status === 'placement' ? 'placement' : (status === 'new' || status === 'commit') ? 'new' : status === 'old' ? 'old' : '';
+    const chip = tag ? `<span class="node-tag ${tagClass}">${escapeHTML(tag)}</span>` : '';
+    return `<div class="fiber-row" data-tree="${tree}" data-fiber-id="${id}" style="--indent:${depth}"><div class="fiber-row-inner"><span class="branch">${depth ? '↳' : '•'}</span><div class="fiber-node ${statusClass}"><span class="node-kind">${type}</span><span class="node-main"><b>${escapeHTML(name)}</b><small>${escapeHTML(detail)}</small></span>${chip}</div></div></div>`;
+  }
+
+  function drawFiberTree(data, which, mode) {
+    const total = data.length;
+    const linked = which === 'wip' && (mode === 'draft' || mode === 'initial');
+    const isOld = mode === 'old';
+    let html = '';
+    const state = (id, inherited = '') => isOld ? 'old' : (linked && mode === 'draft') ? 'reuse' : inherited;
+    const tag = (s) => s === 'old' ? 'ALT' : s === 'reuse' ? '↔' : '';
+    for (const [id,depth,type,name,detail] of [
+      ['root',0,'ROOT','HostRoot','корень приложения'],
+      ['app',1,'FC','ItemList',`useState: ${total} шт.`],
+      ['div',2,'HOST','<div>','host component'],
+      ['button',3,'HOST','<button>','onClick: addItem'],
+      ['list',3,'HOST','<ul>',`${total} children`]
+    ]) {
+      const s = state(id);
+      html += makeRow(which,id,depth,type,name,detail,s,tag(s));
+    }
+    for (const item of data) {
+      const fresh = linked && tx && item.id === tx.added.id;
+      const justCommitted = which === 'current' && tx && stage >= 5 && item.id === tx.added.id;
+      let s = fresh ? stage === 4 ? 'placement' : 'new' : state('item'+item.id);
+      if(justCommitted) s = 'commit';
+      const t = s === 'placement' ? 'Placement' : s === 'new' ? 'NEW' : s === 'commit' ? 'NEW' : s === 'old' ? 'ALT' : s === 'reuse' ? '↔' : '';
+      html += makeRow(which,`item-${item.id}`,4,'HOST','<li>',`key=${item.id} · ${item.label}`,s,t);
+    }
+    return html;
+  }
+
+  function renderTrees() {
+    ids.currentTree.innerHTML = drawFiberTree(items,'current','current');
+    if(stage < 2) {
+      ids.wipTree.innerHTML = `<div class="empty-tree"><div class="empty-glyph">{ ··· }</div><strong>${stage === 1 ? 'Обновление в очереди' : 'Нет текущего рендера'}</strong><span>${stage === 1 ? 'WIP начнёт строиться на следующем шаге' : 'Нажми «Добавить элемент»'}</span></div>`;
+      ids.wipTitle.textContent = 'workInProgress';
+      ids.wipSubtitle.textContent = stage === 1 ? 'ожидает render' : 'пока пусто';
+    } else if (stage === 2) {
+      const c = tx.next.length;
+      ids.wipTree.innerHTML = makeRow('wip','root',0,'ROOT','HostRoot','render в процессе','reuse','↔') + makeRow('wip','app',1,'FC','ItemList',`useState: ${c} шт.`,'reuse','↔') + `<div class="empty-tree" style="min-height:144px"><div class="empty-glyph" style="font-size:21px">···</div><span>Дочерние Fiber ещё обрабатываются</span></div>`;
+      ids.wipTitle.textContent='workInProgress';
+      ids.wipSubtitle.textContent='строится';
+    } else if(stage === 3 || stage === 4) {
+      ids.wipTree.innerHTML=drawFiberTree(tx.next,'wip','draft');
+      ids.wipTitle.textContent='workInProgress';
+      ids.wipSubtitle.textContent=stage === 4 ? 'готово к commit' : 'сопоставление children';
+    } else {
+      ids.wipTree.innerHTML=drawFiberTree(tx.old,'wip','old');
+      ids.wipTitle.textContent='alternate / previous';
+      ids.wipSubtitle.textContent='предыдущая версия';
+    }
+    ids.wipCard.classList.toggle('pending',stage >= 2 && stage <= 4);
+    requestAnimationFrame(drawAlternateLinks);
+  }
+
+  function drawAlternateLinks() {
+    const svg=ids.alternateLinks;
+    const boardRect=ids.treeBoard.getBoundingClientRect();
+    const w=boardRect.width,h=boardRect.height;
+    if(!w || !h || stage < 2 || window.matchMedia('(max-width: 1250px)').matches) { svg.replaceChildren(); return; }
+    svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+    svg.setAttribute('width',w);
+    svg.setAttribute('height',h);
+    const pairs=[];
+    ids.currentTree.querySelectorAll('[data-fiber-id]').forEach(left => {
+      const key=left.getAttribute('data-fiber-id');
+      const right=ids.wipTree.querySelector(`[data-fiber-id="${key}"]`);
+      if(!right) return;
+      const l=left.querySelector('.fiber-node').getBoundingClientRect();
+      const r=right.querySelector('.fiber-node').getBoundingClientRect();
+      const x1=l.right-boardRect.left+2,x2=r.left-boardRect.left-2;
+      if(x2 < x1) return;
+      const y1=(l.top+l.bottom)/2-boardRect.top,y2=(r.top+r.bottom)/2-boardRect.top;
+      const c=Math.max(9,(x2-x1)*.44);
+      pairs.push(`<path d="M ${x1} ${y1} C ${x1+c} ${y1}, ${x2-c} ${y2}, ${x2} ${y2}" fill="none" stroke="#71dbdd" opacity=".52" stroke-width="1.5" stroke-dasharray="4 4"/><circle cx="${x1}" cy="${y1}" r="2" fill="#71dbdd"/><circle cx="${x2}" cy="${y2}" r="2" fill="#71dbdd"/>`);
+    });
+    svg.innerHTML=pairs.join('');
+  }
+
+  function render() {
+    const phase = phases[stage];
+    ids.phaseCaption.textContent=phase.caption;
+    ids.phaseTitle.textContent=phase.title;
+    ids.phaseDescription.textContent=phase.description;
+    ids.stageFraction.textContent=`${stage} / 6`;
+    ids.treeFoot.innerHTML=`<strong>Обрати внимание:</strong> ${escapeHTML(phase.foot)}`;
+    [...ids.steps.children].forEach((step,index) => {
+      step.classList.toggle('active',stage === index+1);
+      step.classList.toggle('done',stage > index+1);
+    });
+    const busy=stage>=1 && stage<6;
+    ids.addBtn.disabled=busy;
+    ids.previewAddBtn.disabled=busy;
+    ids.nextBtn.disabled=!busy;
+    ids.domList.innerHTML=items.map(item=>`<li${item.id === lastAnimatedId && stage === 5 ? ' class="newly-committed"' : ''}>${escapeHTML(item.label)}</li>`).join('');
+    ids.domCount.textContent=items.length;
+    ids.nextCount.textContent=(tx && stage<5) ? tx.next.length : '—';
+    ids.screenHint.textContent=(stage>=1 && stage<=4) ? 'Изменения вычисляются в Fiber, но DOM остаётся прежним.' : stage>=5 ? 'Новый элемент появился только в commit (этап 05).' : 'DOM остаётся неизменным, пока React не дойдёт до commit.';
+    ids.stateMetric.textContent=tx && stage>=2 && stage<=4 ? `${tx.next.length} элемента (WIP)` : `${items.length} элемента (current)`;
+    ids.queueMetric.textContent=stage === 1 ? '1 update · pending' : stage >= 2 && stage <= 4 ? 'обрабатывается' : 'пуста';
+    ids.queueMetric.className=(stage>=1 && stage<=4) ? 'wait' : '';
+    ids.fiberMetric.textContent=stage>=3 && stage<=4 ? '1 · новый <li>' : stage>=5 ? '1 · committed' : '0';
+    ids.fiberMetric.className=stage>=3 ? 'ok' : '';
+    ids.domMetric.textContent=stage>=5 ? '1 × insert <li>' : '0';
+    ids.domMetric.className=stage>=5 ? 'ok' : '';
+    ids.effectMetric.textContent=stage>=1 && stage<=4 ? `setup(${tx.old.length}) · старый` : stage === 5 ? 'cleanup/setup ожидаются' : `setup(${items.length}) · выполнен`;
+    ids.effectMetric.className=stage===5 ? 'wait' : stage===6 ? 'ok' : '';
+    document.querySelectorAll('.code-line[data-hl]').forEach(line => line.classList.toggle('hl',(line.dataset.hl || '').split(',').includes(String(stage))));
+    ids.eventLog.innerHTML=entries.slice(-14).map(e=>`<div class="log-item ${e.kind}"><span class="log-time">${String(e.seq).padStart(2,'0')}</span><span>${escapeHTML(e.message)}</span></div>`).join('');
+    ids.eventLog.scrollTop=ids.eventLog.scrollHeight;
+    ids.autoIcon.textContent=playing ? 'Ⅱ' : '▶';
+    ids.autoLabel.textContent=playing ? 'Пауза' : 'Автоматически';
+    renderTrees();
+  }
+  function stopAuto() {
+    if(timer!==null) clearInterval(timer);
+    timer=null;
+    playing=false;
+  }
+  function startUpdate() {
+    if(stage>=1 && stage<6) return;
+    if(playing) stopAuto();
+    const before=items.slice();
+    const id=nextId++;
+    const added={ id, label:`Элемент ${id}` };
+    tx={ old:before, next:[...before,added], added };
+    cycle++;
+    stage=1;
+    lastAnimatedId=null;
+    note('warn',`#${cycle} · setItems(...) → update queued`);
+    render();
+  }
+  function nextStep() {
+    if(!tx || stage<1 || stage>=6) { stopAuto(); render(); return; }
+    stage++;
+    if(stage===2) note('normal',`beginWork(ItemList): items ${tx.old.length} → ${tx.next.length}`);
+    if(stage===3) note('normal',`reconcileChildren: ${tx.old.length} key совпали; key=${tx.added.id} — новый`);
+    if(stage===4) note('warn',`completeWork: key=${tx.added.id}, flag = Placement`);
+    if(stage===5) {
+      items=tx.next;
+      lastAnimatedId=tx.added.id;
+      note('dom',`commit: DOM.insertBefore(<li key=${tx.added.id}>)`);
+      note('normal','root.current ← finishedWork (смена дерева)');
+    }
+    if(stage===6) {
+      note('effect',`cleanup: items.length = ${tx.old.length}`);
+      note('effect',`setup: items.length = ${tx.next.length}`);
+      stopAuto();
+    }
+    render();
+  }
+  function toggleAuto() {
+    if(playing) { stopAuto(); render(); return; }
+    if(stage===0 || stage===6) startUpdate();
+    if(stage===6 || stage===0) return;
+    playing=true;
+    render();
+    timer=setInterval(() => {
+      if(stage>=6) { stopAuto(); render(); return; }
+      nextStep();
+    },1100);
+  }
+  function reset() {
+    stopAuto();
+    items=initial();
+    nextId=3;
+    stage=0;
+    tx=null;
+    cycle=0;
+    entries=[];
+    logSequence=0;
+    lastAnimatedId=null;
+    note('effect','Первый mount: setup(items.length = 2)');
+    render();
+  }
+  ids.addBtn.addEventListener('click',startUpdate);
+  ids.previewAddBtn.addEventListener('click',startUpdate);
+  ids.nextBtn.addEventListener('click',nextStep);
+  ids.autoBtn.addEventListener('click',toggleAuto);
+  ids.resetBtn.addEventListener('click',reset);
+  window.addEventListener('resize',()=>requestAnimationFrame(drawAlternateLinks),{passive:true});
+  document.addEventListener('keydown',e=>{
+    if((e.key==='ArrowRight' || e.key==='Enter') && !['BUTTON','INPUT','TEXTAREA','SELECT','A'].includes(document.activeElement?.tagName)) {
+      if(stage>=1 && stage<6) { e.preventDefault(); nextStep(); }
+    }
+  });
+  reset();
+})();
+</script>
+</body>
+</html>
